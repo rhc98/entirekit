@@ -726,7 +726,7 @@ const STATIC_HTML_PART2 = `  </script>
         return '<div class="session-card">' +
           '<div class="meta">' +
             '<span class="date">' + shortDate(s.created_at) + '</span>' +
-            '<span class="branch-tag">' + truncPath(s.branch, 25) + '</span>' +
+            '<span class="branch-tag">' + escapeHtml(truncPath(s.branch, 25)) + '</span>' +
           '</div>' +
           '<div class="stats">' +
             '<div class="stat-item"><span class="stat-label">Output Tokens</span><span class="stat-value">' + fmt(s.output_tokens) + '</span></div>' +
@@ -755,7 +755,7 @@ const STATIC_HTML_PART2 = `  </script>
         '</tr></thead><tbody>' +
         branches.map(function(b) {
           return '<tr>' +
-            '<td class="file-path" title="' + b.branch + '">' + truncPath(b.branch, 35) + '</td>' +
+            '<td class="file-path" title="' + escapeHtml(b.branch || '') + '">' + escapeHtml(truncPath(b.branch, 35)) + '</td>' +
             '<td class="num">' + b.sessions + '</td>' +
             '<td class="num">' + fmt(b.total_output) + '</td>' +
             '<td class="num">' + fmt(b.total_api_calls) + '</td>' +

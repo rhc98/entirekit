@@ -18,6 +18,15 @@ const pkg = require(resolve(__dirname, '../package.json')) as { version: string 
 
 const program = new Command();
 
+function parsePositiveIntegerOption(value: string, optionName: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.error(`Invalid value for ${optionName}: "${value}". Use a positive integer.`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
 program
   .name('entirekit')
   .description('CLI toolkit for analyzing EntireKit data')
@@ -45,7 +54,10 @@ program
   .option('--json', 'Print machine-readable JSON output')
   .action(async (opts) => {
     const git = new GitClient();
-    await runStats(git, { ...opts, limit: parseInt(opts.limit, 10) });
+    await runStats(git, {
+      ...opts,
+      limit: parsePositiveIntegerOption(opts.limit, '--limit'),
+    });
   });
 
 // search
@@ -59,7 +71,11 @@ program
   .option('--json', 'Print machine-readable JSON output')
   .action(async (keyword, opts) => {
     const git = new GitClient();
-    await runSearch(git, { keyword, ...opts, limit: parseInt(opts.limit, 10) });
+    await runSearch(git, {
+      keyword,
+      ...opts,
+      limit: parsePositiveIntegerOption(opts.limit, '--limit'),
+    });
   });
 
 // diff
@@ -127,7 +143,7 @@ program
   .action(async (opts) => {
     const git = new GitClient();
     await runReport(git, {
-      limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+      limit: opts.limit ? parsePositiveIntegerOption(opts.limit, '--limit') : undefined,
       output: opts.output,
       exportJson: opts.exportJson,
       exportCsv: opts.exportCsv,

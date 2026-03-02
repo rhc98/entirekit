@@ -127,6 +127,18 @@ function copyTree(src: string, dst: string, label: string): void {
   log.ok(`${label} copied to ${dst}`);
 }
 
+async function confirmOrAutoApprove(opts: InstallOptions, message: string): Promise<boolean> {
+  if (opts.yes) {
+    log.info(`--yes enabled: auto-approving prompt "${message}"`);
+    return true;
+  }
+
+  return confirm({
+    message,
+    default: false,
+  });
+}
+
 export async function runInstall(opts: InstallOptions): Promise<void> {
   log.plain('======================================');
   log.plain('  EntireKit Setup');
@@ -211,10 +223,10 @@ export async function runInstall(opts: InstallOptions): Promise<void> {
         : path.join(projectRoot, '.gemini/skills');
 
     if (fs.existsSync(targetSkillsDir) && !opts.force) {
-      const shouldContinue = await confirm({
-        message: 'Existing Local Skills directory found. Continue with merge copy?',
-        default: false,
-      });
+      const shouldContinue = await confirmOrAutoApprove(
+        opts,
+        'Existing Local Skills directory found. Continue with merge copy?'
+      );
 
       if (!shouldContinue) {
         log.plain('Installation canceled.');
@@ -232,10 +244,10 @@ export async function runInstall(opts: InstallOptions): Promise<void> {
   const targetEntireDir = path.join(projectRoot, '.entire');
 
   if (fs.existsSync(targetEntireDir) && !opts.force) {
-    const shouldContinue = await confirm({
-      message: 'Existing .entire directory found. Continue with merge copy?',
-      default: false,
-    });
+    const shouldContinue = await confirmOrAutoApprove(
+      opts,
+      'Existing .entire directory found. Continue with merge copy?'
+    );
 
     if (!shouldContinue) {
       log.plain('Installation canceled.');
@@ -265,10 +277,7 @@ export async function runInstall(opts: InstallOptions): Promise<void> {
   const existingAlias = await git.getLocalAlias('entirekit');
   if (existingAlias && !opts.force) {
     log.warn('existing entirekit alias found.');
-    const shouldOverwrite = await confirm({
-      message: 'Overwrite it?',
-      default: false,
-    });
+    const shouldOverwrite = await confirmOrAutoApprove(opts, 'Overwrite it?');
 
     if (!shouldOverwrite) {
       log.plain('Installation canceled.');

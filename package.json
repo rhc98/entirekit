@@ -1,6 +1,6 @@
 {
   "name": "entirekit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "CLI toolkit for analyzing EntireKit data and installing git entirekit aliases",
   "license": "MIT",
   "type": "module",
@@ -56,6 +56,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "overrides": {
+    "rollup": "^4.58.1"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.2.1",
