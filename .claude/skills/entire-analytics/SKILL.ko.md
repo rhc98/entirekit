@@ -882,122 +882,64 @@ done
 
 ---
 
-## 고급 분석 스크립트
+## 고급 분석 워크플로우 (TypeScript 우선)
 
-### 스크립트 1: 완전 분석 대시보드
+### 워크플로우 1: 전체 분석 대시보드
 
 ```bash
-#!/bin/bash
-# analyze-full.sh - 모든 분석을 한 번에 실행
+mkdir -p analysis
 
-generate_full_analysis() {
-  local output_file="analysis_$(date +%Y%m%d_%H%M%S).md"
-
-  {
-    echo "# 종합 분석 리포트"
-    echo "생성일: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo ""
-
-    echo "## 토큰 분석"
-    echo '```'
-    git entirekit stats 2>/dev/null || echo "git entirekit stats 실행 불가"
-    echo '```'
-    echo ""
-
-    echo "## 최근 활동"
-    echo '```'
-    git entirekit recent 2>/dev/null || git log entire/checkpoints/v1 --format="%h %ad %s" --date=short -10
-    echo '```'
-    echo ""
-
-  } > "$output_file"
-
-  echo "리포트 저장: $output_file"
-}
-
-generate_full_analysis
+npx entirekit stats --json > analysis/stats.json
+npx entirekit recent > analysis/recent.txt
+npx entirekit report --limit 100 --output analysis/dashboard.html --no-open
 ```
 
-### 스크립트 2: 비용 리포트 생성기
+### 워크플로우 2: 비용 리포트 스냅샷
 
 ```bash
-#!/bin/bash
-# cost-report.sh
+mkdir -p analysis
 
-generate_cost_report() {
-  local days=${1:-30}
-  local output="cost_report_${days}d.md"
-
-  # 가격 설정
-  local INPUT_PRICE=0.00003
-  local OUTPUT_PRICE=0.00006
-  local CACHE_PRICE=0.000009
-
-  {
-    echo "# 비용 분석 리포트 (최근 ${days}일)"
-    echo "생성: $(date)"
-    echo ""
-
-    # 토큰 통계
-    echo "## 토큰 사용량"
-    echo ""
-
-    # 비용 계산은 워크플로우 2 참조
-
-  } > "$output"
-
-  echo "비용 리포트: $output"
-}
-
-generate_cost_report 30
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-28 \
+  --export-json analysis/feb-cost.json \
+  --output analysis/feb-cost.html \
+  --no-open
 ```
 
-### 스크립트 3: 파일별 변경 히스토리
+### 워크플로우 3: 파일 변경 이력
 
 ```bash
-#!/bin/bash
-# file-history.sh
+mkdir -p analysis
 
-show_file_history() {
-  local target_file="$1"
+npx entirekit search "src/lib/mapoBridge.ts" --limit 100 --json > analysis/file-history.json
+npx entirekit diff <hash1> <hash2> --json > analysis/file-diff.json
+```
 
-  if [ -z "$target_file" ]; then
-    echo "사용법: $0 <파일경로>"
-    return 1
-  fi
+### 선택 사항: TypeScript 실행기
 
-  get_metadata_path() {
-    local hash=$1
-    git ls-tree -r --name-only $hash 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-  }
+```ts
+// scripts/run-analysis.ts
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { execa } from 'execa';
 
-  echo "파일 변경 히스토리: $target_file"
-  echo "=========================================="
-  echo ""
+async function main(): Promise<void> {
+  mkdirSync('analysis', { recursive: true });
 
-  HASHES=$(git log entire/checkpoints/v1 --format="%H" -100)
-  for hash in $HASHES; do
-    metadata=$(get_metadata_path $hash)
-    if [ -n "$metadata" ]; then
-      files=$(git show $hash:$metadata | jq -r '.files_touched[]? // empty')
+  const stats = await execa('npx', ['entirekit', 'stats', '--json']);
+  writeFileSync('analysis/stats.json', stats.stdout, 'utf8');
 
-      if echo "$files" | grep -q "$target_file"; then
-        date=$(git log -1 --format="%ad" --date=short $hash)
-        time=$(git log -1 --format="%ai" $hash | cut -d' ' -f2)
-
-        prompt_path=$(git ls-tree -r --name-only $hash | grep 'prompt.txt$' | head -1)
-        if [ -n "$prompt_path" ]; then
-          prompt=$(git show $hash:$prompt_path | head -1)
-          echo "[$date $time] $hash"
-          echo "  $prompt"
-          echo ""
-        fi
-      fi
-    fi
-  done
+  await execa(
+    'npx',
+    ['entirekit', 'report', '--limit', '100', '--output', 'analysis/dashboard.html', '--no-open'],
+    { stdio: 'inherit' }
+  );
 }
 
-show_file_history "$@"
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
 ---

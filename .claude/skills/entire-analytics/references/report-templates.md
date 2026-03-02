@@ -3,7 +3,7 @@
 # EntireKit Report Templates
 
 A collection of markdown report templates for analyzing and sharing checkpoint data.
-Daily, weekly, monthly, and custom range reports can be auto-generated with bash scripts.
+Daily, weekly, monthly, and custom range reports can be auto-generated with TypeScript runners or direct CLI commands.
 
 ## Overview
 
@@ -149,165 +149,47 @@ These templates are used for:
 - **AI Contribution**: 81.0%
 ```
 
-### Bash Script
+### TypeScript/CLI Runner
 
 ```bash
-#!/bin/bash
-# daily-report.sh - Generate daily report
+mkdir -p reports
 
-set -euo pipefail
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --export-json reports/daily-2026-02-13.json \
+  --output reports/daily-2026-02-13.html \
+  --no-open
+```
 
-TARGET_DATE="${1:-$(date +%Y-%m-%d)}"
-OUTPUT_FILE="checkpoint-report-daily-${TARGET_DATE}.md"
+```ts
+// scripts/daily-report.ts
+import { execa } from 'execa';
 
-# Helper function
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
+async function main(): Promise<void> {
+  await execa(
+    'npx',
+    [
+      'entirekit',
+      'report',
+      '--since',
+      '2026-02-13',
+      '--until',
+      '2026-02-14',
+      '--export-json',
+      'reports/daily-2026-02-13.json',
+      '--output',
+      'reports/daily-2026-02-13.html',
+      '--no-open',
+    ],
+    { stdio: 'inherit' }
+  );
 }
 
-# Set date range
-START_DATE="$TARGET_DATE"
-END_DATE=$(date -d "$TARGET_DATE +1 day" +%Y-%m-%d)
-
-# Collect data
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$END_DATE" --format="%H")
-
-if [ -z "$HASHES" ]; then
-  echo "❌ No checkpoints found for this date."
-  exit 1
-fi
-
-# Calculate statistics
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE=0
-TOTAL_CALLS=0
-AGENT_LINES=0
-HUMAN_MODIFIED=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-SESSION_COUNT=0
-declare -A FILE_COUNTS
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # Token statistics
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE=$((TOTAL_CACHE + cache))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    # AI contribution statistics
-    agent=$(echo "$data" | jq -r '.initial_attribution.agent_lines // 0')
-    human=$(echo "$data" | jq -r '.initial_attribution.human_modified // 0')
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-
-    if [ "$agent" != "0" ] || [ "$human" != "0" ]; then
-      AGENT_LINES=$((AGENT_LINES + agent))
-      HUMAN_MODIFIED=$((HUMAN_MODIFIED + human))
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # File statistics
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    SESSION_COUNT=$((SESSION_COUNT + 1))
-  fi
-done <<< "$HASHES"
-
-# Average AI contribution
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# TOP 5 files
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -5 | awk '{print "| " $2 " | " $1 " |"}'
-)
-
-# Branch information
-MAIN_BRANCH=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$END_DATE" --format="%H" | head -1 | xargs -I {} git show {}:$(get_metadata_path {}) 2>/dev/null | jq -r '.branch // "unknown"')
-
-# Generate report
-cat > "$OUTPUT_FILE" << EOF
-# Daily Checkpoint Report - $TARGET_DATE
-
-## Summary
-
-| Item | Value |
-|------|-------|
-| Sessions | $SESSION_COUNT |
-| Total Token Usage | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT))) |
-| AI Contribution | $AVG_AI_PCT% |
-| Files Modified | ${#FILE_COUNTS[@]} |
-| Primary Branch | $MAIN_BRANCH |
-
-## Statistics
-
-### Token Usage
-- **Input**: $(printf "%'d" $TOTAL_INPUT) tokens
-- **Output**: $(printf "%'d" $TOTAL_OUTPUT) tokens
-- **Cache Read**: $(printf "%'d" $TOTAL_CACHE) tokens
-- **API Calls**: $TOTAL_CALLS
-
-### AI Contribution
-- **Average AI Contribution**: $AVG_AI_PCT%
-- **Lines Contributed**: $(printf "%'d" $AGENT_LINES)
-- **Lines Human-Modified**: $(printf "%'d" $HUMAN_MODIFIED)
-
-## Hot Files (Most Frequently Modified)
-
-| File | Modification Count |
-|------|--------------------|
-$HOTFILES
-
-## Session List
-
-EOF
-
-# Add each session's info
-i=1
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    time=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f2 | cut -d'+' -f1)
-    branch=$(echo "$data" | jq -r '.branch // "unknown"')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-    files=$(echo "$data" | jq -r '.files_touched | length // 0')
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-
-    cat >> "$OUTPUT_FILE" << EOF
-### Session $i: $time
-- **Branch**: $branch
-- **Output Tokens**: $(printf "%'d" $output)
-- **API Calls**: $calls
-- **Files Modified**: $files
-- **AI Contribution**: $(printf "%.1f" $pct)%
-
-EOF
-    i=$((i + 1))
-  fi
-done <<< "$HASHES"
-
-echo "✅ Report generated: $OUTPUT_FILE"
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
 ---
@@ -414,165 +296,17 @@ echo "✅ Report generated: $OUTPUT_FILE"
 - Productivity peaks on Friday (wrapping up weekly work)
 ```
 
-### Bash Script
+### TypeScript/CLI Runner
 
 ```bash
-#!/bin/bash
-# weekly-report.sh - Generate weekly report
+mkdir -p reports
 
-set -euo pipefail
-
-WEEK="${1:-$(date +%V)}"
-YEAR="${2:-$(date +%Y)}"
-OUTPUT_FILE="checkpoint-report-weekly-${YEAR}-W${WEEK}.md"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-# Calculate Monday and Sunday of the target week
-MONDAY=$(date -d "$YEAR-W$WEEK-1" +%Y-%m-%d)
-SUNDAY=$(date -d "$YEAR-W$WEEK-0" +%Y-%m-%d)
-
-HASHES=$(git log entire/checkpoints/v1 --since="$MONDAY" --until="$(date -d "$SUNDAY +1 day" +%Y-%m-%d)" --format="%H")
-
-# Calculate statistics
-declare -A DAILY_SESSIONS
-declare -A DAILY_TOKENS
-declare -A DAILY_CALLS
-declare -A FILE_COUNTS
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE=0
-TOTAL_CALLS=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-ACTIVE_DAYS=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    date=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f1)
-    dayofweek=$(date -d "$date" +%A)
-
-    # Daily statistics
-    DAILY_SESSIONS["$dayofweek"]=$((${DAILY_SESSIONS["$dayofweek"]:-0} + 1))
-
-    # Token statistics
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE=$((TOTAL_CACHE + cache))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    DAILY_TOKENS["$dayofweek"]=$((${DAILY_TOKENS["$dayofweek"]:-0} + output))
-    DAILY_CALLS["$dayofweek"]=$((${DAILY_CALLS["$dayofweek"]:-0} + calls))
-
-    # AI contribution
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-    if [ "$pct" != "0" ]; then
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # File statistics
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-# Calculate active days
-ACTIVE_DAYS=${#DAILY_SESSIONS[@]}
-
-# Average AI contribution
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# Daily average sessions
-AVG_SESSIONS=$(echo "scale=1; $TOTAL_SESSIONS / $ACTIVE_DAYS" | bc -l)
-
-# TOP 8 files
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -8 | awk '{print "| " $2 " | " $1 " | " (match($2, /\//) ? substr($2, 1, index($2, "/") - 1) : ".") " |"}'
-)
-
-# Day-of-week table rows
-DAYNAMES=("Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday")
-DAYTABLE=""
-for day in "${DAYNAMES[@]}"; do
-  sessions=${DAILY_SESSIONS["$day"]:-0}
-  tokens=${DAILY_TOKENS["$day"]:-0}
-  calls=${DAILY_CALLS["$day"]:-0}
-  DAYTABLE+="| $day | $sessions | $(printf "%'d" $tokens) | $calls |\n"
-done
-
-# Generate report
-cat > "$OUTPUT_FILE" << EOF
-# Weekly Checkpoint Report - Week $(printf "%02d" $WEEK)/$YEAR
-
-## Overview
-
-| Item | Value |
-|------|-------|
-| Total Sessions | $TOTAL_SESSIONS |
-| Daily Average Sessions | $AVG_SESSIONS |
-| Total Token Usage | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT))) |
-| Total API Calls | $TOTAL_CALLS |
-| Overall AI Contribution | $AVG_AI_PCT% |
-| Files Modified | ${#FILE_COUNTS[@]} |
-| Active Days | $ACTIVE_DAYS |
-
-## Productivity Trends
-
-### Daily Session Distribution
-
-| Day | Sessions | Token Usage | API Calls |
-|-----|----------|-------------|-----------|
-EOF
-
-echo -ne "$DAYTABLE" >> "$OUTPUT_FILE"
-
-cat >> "$OUTPUT_FILE" << EOF
-
-## TOP Files
-
-| File | Modification Count | Directory |
-|------|--------------------|-----------|
-$HOTFILES
-
-## Detailed Statistics
-
-### Token Analysis
-- **Input**: $(printf "%'d" $TOTAL_INPUT) tokens
-- **Output**: $(printf "%'d" $TOTAL_OUTPUT) tokens
-- **Cache Read**: $(printf "%'d" $TOTAL_CACHE) tokens
-- **Total**: $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE))) tokens
-
-### AI Contribution
-- **Average**: $AVG_AI_PCT%
-- **Sessions**: $AGENT_PCT_COUNT
-
----
-
-**Generated**: $(date '+%Y-%m-%d %H:%M:%S')
-EOF
-
-echo "✅ Report generated: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --export-json reports/weekly-2026-W07.json \
+  --output reports/weekly-2026-W07.html \
+  --no-open
 ```
 
 ---
@@ -787,193 +521,17 @@ This month focused on improving the login feature and authentication system, wit
 **Data Range**: 2026-02-01 00:00:00 ~ 2026-02-28 23:59:59
 ```
 
-### Bash Script
+### TypeScript/CLI Runner
 
 ```bash
-#!/bin/bash
-# monthly-report.sh - Generate monthly report (improved from advanced-usage.md example)
+mkdir -p reports
 
-set -euo pipefail
-
-MONTH="${1:-$(date +%Y-%m)}"
-OUTPUT_FILE="checkpoint-report-monthly-${MONTH}.md"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-# Date range
-YEAR=$(echo "$MONTH" | cut -d'-' -f1)
-MONTH_NUM=$(echo "$MONTH" | cut -d'-' -f2)
-START_DATE="$MONTH-01"
-LAST_DAY=$(date -d "$YEAR-$MONTH_NUM-01 +1 month -1 day" +%d)
-END_DATE="$MONTH-$LAST_DAY"
-
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$(date -d "$END_DATE +1 day" +%Y-%m-%d)" --format="%H")
-
-# Calculate statistics
-declare -A FILE_COUNTS
-declare -A WEEKLY_SESSIONS
-declare -A WEEKLY_TOKENS
-declare -A BRANCH_STATS
-
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE_READ=0
-TOTAL_CACHE_CREATE=0
-TOTAL_CALLS=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # Calculate week number
-    date=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f1)
-    week=$(date -d "$date" +%V)
-
-    # Token statistics
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache_read=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    cache_create=$(echo "$data" | jq -r '.token_usage.cache_creation_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE_READ=$((TOTAL_CACHE_READ + cache_read))
-    TOTAL_CACHE_CREATE=$((TOTAL_CACHE_CREATE + cache_create))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    # Weekly statistics
-    WEEKLY_SESSIONS["$week"]=$((${WEEKLY_SESSIONS["$week"]:-0} + 1))
-    WEEKLY_TOKENS["$week"]=$((${WEEKLY_TOKENS["$week"]:-0} + output))
-
-    # AI contribution
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-    if [ "$pct" != "0" ]; then
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # File statistics
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    # Branch statistics
-    branch=$(echo "$data" | jq -r '.branch // "unknown"')
-    BRANCH_STATS["$branch"]=$((${BRANCH_STATS["$branch"]:-0} + 1))
-
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-# Calculations
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# Cost calculation (based on Claude 3.5 Sonnet pricing)
-COST_INPUT=$(echo "scale=2; $TOTAL_INPUT / 1000 * 0.003" | bc -l)
-COST_OUTPUT=$(echo "scale=2; $TOTAL_OUTPUT / 1000 * 0.015" | bc -l)
-COST_CACHE_READ=$(echo "scale=2; $TOTAL_CACHE_READ / 1000 * 0.0003" | bc -l)
-COST_CACHE_CREATE=$(echo "scale=2; $TOTAL_CACHE_CREATE / 1000 * 0.00375" | bc -l)
-TOTAL_COST=$(echo "$COST_INPUT + $COST_OUTPUT + $COST_CACHE_READ + $COST_CACHE_CREATE" | bc -l)
-
-# TOP 10 files
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -10 | awk '{print "| " $2 " | " $1 " | " (match($2, /\//) ? substr($2, 1, index($2, "/") - 1) : ".") " | - |"}'
-)
-
-# Branch information
-BRANCHES=$(
-  for branch in "${!BRANCH_STATS[@]}"; do
-    echo "${BRANCH_STATS[$branch]} $branch"
-  done | sort -rn | head -5 | awk '{print "| " $2 " | " $1 " | 0 | 0% |"}'
-)
-
-# Generate report
-cat > "$OUTPUT_FILE" << EOF
-# Monthly Checkpoint Report - $MONTH
-
-## Executive Summary
-
-Summary of development activity for $MONTH.
-
-- **Total Sessions**: ${TOTAL_SESSIONS}
-- **Average AI Contribution**: ${AVG_AI_PCT}%
-- **Total Token Usage**: $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE_READ + TOTAL_CACHE_CREATE)))
-- **Estimated Cost**: \$$TOTAL_COST
-
-## Monthly Statistics
-
-| Item | Value |
-|------|-------|
-| Sessions | $TOTAL_SESSIONS |
-| Average AI Contribution | ${AVG_AI_PCT}% |
-| Cache Efficiency | $(echo "scale=1; $TOTAL_CACHE_READ / ($TOTAL_INPUT + $TOTAL_CACHE_READ) * 100" | bc -l)% |
-| Files Modified | ${#FILE_COUNTS[@]} |
-
-## Cost Analysis
-
-| Item | Usage | Unit Price | Cost |
-|------|-------|------------|------|
-| Input Tokens | $(printf "%'d" $TOTAL_INPUT) | \$0.003/1K | \$$COST_INPUT |
-| Output Tokens | $(printf "%'d" $TOTAL_OUTPUT) | \$0.015/1K | \$$COST_OUTPUT |
-| Cache Read | $(printf "%'d" $TOTAL_CACHE_READ) | \$0.0003/1K | \$$COST_CACHE_READ |
-| Cache Creation | $(printf "%'d" $TOTAL_CACHE_CREATE) | \$0.00375/1K | \$$COST_CACHE_CREATE |
-| **Total** | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE_READ + TOTAL_CACHE_CREATE))) | | **\$$TOTAL_COST** |
-
-## Hot File Analysis
-
-| File | Modification Count | Directory | Last Modified |
-|------|--------------------|-----------|---------------|
-$HOTFILES
-
-## Branch Analysis
-
-| Branch | Sessions | Tokens | AI % |
-|--------|----------|--------|------|
-$BRANCHES
-
-## Weekly Breakdown
-
-EOF
-
-# Add weekly data
-for week in $(echo "${!WEEKLY_SESSIONS[@]}" | tr ' ' '\n' | sort -n); do
-  week_start=$(date -d "$YEAR-W$week-1" +%Y-%m-%d)
-  week_end=$(date -d "$YEAR-W$week-0" +%Y-%m-%d)
-  sessions=${WEEKLY_SESSIONS[$week]:-0}
-  tokens=${WEEKLY_TOKENS[$week]:-0}
-
-  cat >> "$OUTPUT_FILE" << EOF
-
-### Week $(printf "%02d" $week) ($week_start ~ $week_end)
-- Sessions: $sessions
-- Tokens: $(printf "%'d" $tokens)
-
-EOF
-done
-
-cat >> "$OUTPUT_FILE" << EOF
-
----
-
-**Generated**: $(date '+%Y-%m-%d %H:%M:%S')
-**Data Range**: ${START_DATE} ~ ${END_DATE}
-
-EOF
-
-echo "✅ Report generated: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-28 \
+  --export-json reports/monthly-2026-02.json \
+  --output reports/monthly-2026-02.html \
+  --no-open
 ```
 
 ---
@@ -982,59 +540,17 @@ echo "✅ Report generated: $OUTPUT_FILE"
 
 In-depth analysis report for a specific time period.
 
+### TypeScript/CLI Runner
+
 ```bash
-#!/bin/bash
-# custom-range-report.sh - Generate date range report
+mkdir -p reports
 
-set -euo pipefail
-
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 START_DATE END_DATE [OUTPUT_FILE]"
-  echo "Example: $0 2026-02-01 2026-02-13"
-  exit 1
-fi
-
-START_DATE="$1"
-END_DATE="$2"
-OUTPUT_FILE="${3:-checkpoint-report-${START_DATE}_to_${END_DATE}.md}"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$(date -d "$END_DATE +1 day" +%Y-%m-%d)" --format="%H")
-
-# Calculate statistics (same approach as the monthly report above)
-declare -A FILE_COUNTS
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # Token and contribution statistics...
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-cat > "$OUTPUT_FILE" << EOF
-# Custom Range Report
-
-**Period**: $START_DATE ~ $END_DATE
-**Total Sessions**: $TOTAL_SESSIONS
-
-## Summary
-...
-
-EOF
-
-echo "✅ Custom report generated: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-13 \
+  --export-json reports/custom-2026-02-01-to-2026-02-13.json \
+  --output reports/custom-2026-02-01-to-2026-02-13.html \
+  --no-open
 ```
 
 ---
@@ -1118,109 +634,77 @@ git entirekit report --output ~/reports/feb-report.html --no-open
 ### Example 1: Generate and save a daily report
 
 ```bash
-# Generate yesterday's report
-./daily-report.sh $(date -d "yesterday" +%Y-%m-%d)
-
-# Specific date
-./daily-report.sh 2026-02-13
-
-# Save to file
-./daily-report.sh 2026-02-13 > report.md
-
-# Share with team
-cat checkpoint-report-daily-2026-02-13.md | mail -s "Daily Report" team@company.com
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --output ./reports/daily-2026-02-13.html \
+  --no-open
 ```
 
 ### Example 2: Generate weekly report
 
 ```bash
-# Current week report
-./weekly-report.sh
-
-# Specific week
-./weekly-report.sh 07 2026
-
-# Send to Slack bot
-curl -X POST https://hooks.slack.com/services/... \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"text\": \"Weekly Report - Week 07\",
-    \"attachments\": [{
-      \"text\": \"$(cat checkpoint-report-weekly-2026-W07.md)\"
-    }]
-  }"
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --output ./reports/weekly-2026-W07.html \
+  --no-open
 ```
 
 ### Example 3: Generate monthly report and automate
 
 ```bash
-# Current month
-./monthly-report.sh
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-28 \
+  --output ./reports/monthly-2026-02.html \
+  --export-json ./reports/monthly-2026-02.json \
+  --no-open
 
-# Specific month
-./monthly-report.sh 2026-02
-
-# Add to crontab (9am on 1st of every month)
-0 9 1 * * /path/to/monthly-report.sh $(date +\%Y-\%m --date="yesterday") && \
-  mailx -s "Monthly Report" manager@company.com < checkpoint-report-monthly-*.md
+# Crontab (monthly, 9:00)
+0 9 1 * * cd /path/to/repo && npx entirekit report --since $(date +\%Y-\%m-01) --output ./reports/monthly-latest.html --no-open
 ```
 
 ### Example 4: Custom range report
 
 ```bash
-# Specific period
-./custom-range-report.sh 2026-02-01 2026-02-13
-
-# Post-project analysis
-./custom-range-report.sh 2026-01-15 2026-02-13 project-final-report.md
-
-# Share with colleague
-open checkpoint-report-2026-02-01_to_2026-02-13.md
+npx entirekit report \
+  --since 2026-01-15 \
+  --until 2026-02-13 \
+  --output ./reports/project-final-report.html \
+  --export-json ./reports/project-final-report.json \
+  --no-open
 ```
 
 ### Example 5: Generate HTML dashboard
 
 ```bash
-# Generate interactive report (opens in browser automatically)
-git entirekit report
-
-# Generate monthly report
-git entirekit report --since 2026-02-01 --until 2026-03-01 \
-  --output ~/Desktop/feb-2026-report.html
-
-# Auto-generate and save in CI/CD
-git entirekit report --no-open --output ./reports/checkpoint-$(date +%Y-%m-%d).html
+npx entirekit report
+npx entirekit report --limit 20 --no-open --output ./reports/latest-20.html
+npx entirekit report --branch feature/auth --since 2026-02-01 --until 2026-02-13 --no-open
 ```
-
----
 
 ## 7. Configuration File Example
 
-`.entire/config.sh` in the project root:
+`.entire/report-config.json` in the project root:
 
-```bash
-# Report settings
-REPORT_OUTPUT_DIR="./reports"
-REPORT_AUTO_OPEN=true
-REPORT_THEME="dark"  # light, dark, auto
-
-# Cost settings (based on Claude 3.5 Sonnet pricing)
-COST_PER_1K_OUTPUT=0.015
-COST_PER_1K_INPUT=0.003
-COST_PER_1K_CACHE_READ=0.0003
-COST_PER_1K_CACHE_CREATE=0.00375
-
-# Automation settings
-AUTO_DAILY_REPORT=true      # Generate daily
-AUTO_WEEKLY_REPORT=true     # Generate every Monday
-AUTO_MONTHLY_REPORT=true    # Generate on the 1st of each month
-
-# Notification settings
-SLACK_WEBHOOK_URL=""        # Slack integration
-EMAIL_RECIPIENT=""          # Email recipient
+```json
+{
+  "outputDir": "./reports",
+  "autoOpen": false,
+  "defaultLimit": 100,
+  "cost": {
+    "inputPer1k": 0.003,
+    "outputPer1k": 0.015,
+    "cacheReadPer1k": 0.0003,
+    "cacheCreatePer1k": 0.00375
+  },
+  "notifications": {
+    "slackWebhookUrl": "",
+    "emailRecipient": ""
+  }
+}
 ```
-
----
 
 ## Best Practices
 
@@ -1230,7 +714,7 @@ EMAIL_RECIPIENT=""          # Email recipient
 # Add to ~/.bashrc or ~/.zshrc
 alias morning='git entirekit yesterday'
 alias weekly='git entirekit week && git entirekit stats'
-alias monthly='./monthly-report.sh'
+alias monthly='npx entirekit report --since 2026-02-01 --until 2026-02-28 --no-open'
 ```
 
 ### 2. CI/CD Integration
@@ -1249,7 +733,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Generate Weekly Report
-        run: ./weekly-report.sh
+        run: npx entirekit report --since 2026-02-10 --until 2026-02-17 --no-open --output ./reports/weekly.html
       - name: Upload Report
         uses: actions/upload-artifact@v3
         with:

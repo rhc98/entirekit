@@ -983,47 +983,28 @@ git diff <hash1> <hash2> -- src/Button.tsx
 
 ## 고급 팁
 
-### 자동화: 일일 리포트 생성
+### 자동화: 일일 리포트 생성 (TypeScript/CLI)
 
 ```bash
-#!/bin/bash
-# daily-report.sh
+mkdir -p ~/reports
 
-DATE=$(date +%Y-%m-%d)
-OUTPUT=~/reports/checkpoint-$DATE.txt
-
-echo "=== Daily Checkpoint Report ===" > $OUTPUT
-echo "Date: $DATE" >> $OUTPUT
-echo "" >> $OUTPUT
-
-echo "Today's work:" >> $OUTPUT
-git entirekit today >> $OUTPUT
-echo "" >> $OUTPUT
-
-echo "Statistics:" >> $OUTPUT
-git entirekit stats >> $OUTPUT
-
-echo "Report saved to: $OUTPUT"
-open $OUTPUT
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --output ~/reports/checkpoint-2026-02-13.html \
+  --no-open
 ```
 
-사용:
-```bash
-chmod +x daily-report.sh
-./daily-report.sh
-```
-
-### 자동화: 주간 리포트
+### 자동화: 주간 리포트 (TypeScript/CLI)
 
 ```bash
-#!/bin/bash
-# weekly-report.sh
+mkdir -p ~/reports
 
-WEEK=$(date +%Y-week%V)
-OUTPUT=~/reports/checkpoint-$WEEK.html
-
-git entirekit report --limit 100 --output $OUTPUT
-open $OUTPUT
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --output ~/reports/checkpoint-week-07-2026.html \
+  --no-open
 ```
 
 ### 데이터 추출: JSON 파싱

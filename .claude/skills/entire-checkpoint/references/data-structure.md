@@ -396,236 +396,120 @@ git log entire/checkpoints/v1 --format="%H" -20 | while read hash; do
 done | awk '{s+=$1} END {print s}'
 ```
 
-## 7. Access Pattern Examples
+## 7. Access Pattern Examples (TypeScript-first)
 
 ### 7.1 Read Metadata for a Specific Hash
 
 ```bash
-#!/bin/bash
+# CLI summary
+npx entirekit diff <older-hash> <newer-hash> --json
 
+# Raw metadata fallback
 HASH="ac03096"
-
-# Helper function
-get_metadata_path() {
-  git ls-tree -r --name-only $1 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-# Find metadata path
-metadata_path=$(get_metadata_path $HASH)
-echo "Metadata path: $metadata_path"
-
-# Print full metadata
-echo "=== Full Metadata ==="
-git show $HASH:$metadata_path | jq .
-
-# Extract key information only
-echo ""
-echo "=== Summary ==="
-git show $HASH:$metadata_path | jq '{
-  session_id: .session_id,
-  branch: .branch,
-  created_at: .created_at,
-  files_touched: (.files_touched | length),
-  token_usage: .token_usage,
-  ai_contribution: .initial_attribution.agent_percentage
-}'
+git show "$HASH:$(git ls-tree -r --name-only "$HASH" | grep '/[0-9]/metadata.json$' | tail -1)" | jq .
 ```
 
-### 7.2 Extract All Prompts from the Last 10 Checkpoints
+### 7.2 Extract Prompts from Recent Checkpoints
 
 ```bash
-#!/bin/bash
-
-echo "📝 Prompts from the last 10 checkpoints"
-echo "=================================="
-
-git log entire/checkpoints/v1 --format="%H" -10 | while read hash; do
-  echo ""
-  echo "--- Checkpoint: ${hash:0:7} ---"
-
-  # Find prompt path
-  prompt_path=$(git ls-tree -r --name-only $hash 2>/dev/null | grep '/[0-9]/prompt.txt$' | tail -1)
-
-  if [ -n "$prompt_path" ]; then
-    echo "Path: $prompt_path"
-    echo "Content:"
-    git show $hash:$prompt_path | head -10
-  else
-    echo "No prompt found"
-  fi
-done
+npx entirekit recent
+npx entirekit search "prompt" --limit 10 --json
 ```
 
 ### 7.3 Find Checkpoints That Modified a Specific File
 
 ```bash
-#!/bin/bash
-
-TARGET_FILE="src/lib/mapoBridge.ts"
-
-echo "🔍 Checkpoints that modified '$TARGET_FILE'"
-echo "================================================"
-
-get_metadata_path() {
-  git ls-tree -r --name-only $1 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-git log entire/checkpoints/v1 --format="%H %ad" --date=short -20 | while read hash date; do
-  metadata_path=$(get_metadata_path $hash)
-
-  if [ -n "$metadata_path" ]; then
-    # Search for the target file in files_touched
-    if git show $hash:$metadata_path 2>/dev/null | jq -r '.files_touched[]' | grep -q "^${TARGET_FILE}$"; then
-      echo ""
-      echo "[$date] Checkpoint: ${hash:0:7}"
-      echo "Branch: $(git show $hash:$metadata_path | jq -r '.branch')"
-      echo "AI Contribution: $(git show $hash:$metadata_path | jq -r '.initial_attribution.agent_percentage')%"
-    fi
-  fi
-done
+npx entirekit search "src/lib/mapoBridge.ts" --limit 100 --json
 ```
 
 ### 7.4 Calculate Token Usage Within a Date Range
 
 ```bash
-#!/bin/bash
-
-START_DATE="2026-02-01"
-END_DATE="2026-02-15"
-
-echo "💰 Token usage for $START_DATE ~ $END_DATE"
-echo "================================================"
-
-get_metadata_path() {
-  git ls-tree -r --name-only $1 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-total_input=0
-total_output=0
-total_cache=0
-count=0
-
-git log entire/checkpoints/v1 --format="%H" --all | while read hash; do
-  metadata_path=$(get_metadata_path $hash)
-  if [ -n "$metadata_path" ]; then
-    data=$(git show $hash:$metadata_path 2>/dev/null)
-    created=$(echo "$data" | jq -r '.created_at' | cut -d'T' -f1)
-
-    if [[ "$created" > "$START_DATE" ]] && [[ "$created" < "$END_DATE" ]]; then
-      input=$(echo "$data" | jq '.token_usage.input_tokens // 0')
-      output=$(echo "$data" | jq '.token_usage.output_tokens // 0')
-      cache=$(echo "$data" | jq '.token_usage.cache_read_tokens // 0')
-
-      total_input=$((total_input + input))
-      total_output=$((total_output + output))
-      total_cache=$((total_cache + cache))
-      count=$((count + 1))
-    fi
-  fi
-done
-
-echo "Total checkpoints: $count"
-echo "Input tokens: $total_input"
-echo "Output tokens: $total_output"
-echo "Cache tokens: $total_cache"
-echo "Total: $((total_input + total_output + total_cache))"
+npx entirekit stats --since 2026-02-01 --until 2026-02-15 --json
+npx entirekit report --since 2026-02-01 --until 2026-02-15 --export-json ./analysis/range.json --no-open
 ```
 
 ### 7.5 Extract Multiple Pieces of Information in a Single Query
 
 ```bash
-#!/bin/bash
-
-HASH="ac03096"
-
-get_metadata_path() {
-  git ls-tree -r --name-only $1 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-metadata_path=$(get_metadata_path $HASH)
-data=$(git show $HASH:$metadata_path)
-
-# Extract multiple pieces of information in a single jq call
-info=$(echo "$data" | jq '{
-  session_id: .session_id,
-  checkpoint_id: .checkpoint_id,
-  branch: .branch,
-  created_at: .created_at,
-  files_count: (.files_touched | length),
-  input_tokens: .token_usage.input_tokens,
-  output_tokens: .token_usage.output_tokens,
-  cache_tokens: .token_usage.cache_read_tokens,
-  ai_percentage: .initial_attribution.agent_percentage,
-  human_lines: .initial_attribution.human_added,
-  agent_lines: .initial_attribution.agent_lines
-}')
-
-echo "$info" | jq .
+npx entirekit stats --json | jq '{
+  sessions: .sessions_analyzed,
+  input_tokens: .tokens.input,
+  output_tokens: .tokens.output,
+  cache_read_tokens: .tokens.cache_read,
+  api_calls: .tokens.api_calls
+}'
 ```
 
 ## 8. Advanced Usage
 
-### 8.1 Checkpoint Script Example (Full Analysis)
-
-See `entirekit stats`:
+### 8.1 Full Analysis Pipeline
 
 ```bash
-#!/bin/bash
+mkdir -p analysis
 
-# Token statistics (last 10)
-# AI contribution analysis (last 10)
-# Top 10 most-modified files
-# Last 5 session summaries
+npx entirekit stats --limit 50 --json > analysis/stats.json
+npx entirekit search "auth" --limit 100 --json > analysis/search-auth.json
+npx entirekit report --limit 100 --output analysis/dashboard.html --no-open
 ```
 
-### 8.2 Checkpoint Search Script
+### 8.2 TypeScript Automation Entrypoint
 
-See `entirekit search`:
+```ts
+// scripts/checkpoint-analysis.ts
+import { execa } from 'execa';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
-```bash
-#!/bin/bash
+async function main(): Promise<void> {
+  mkdirSync('analysis', { recursive: true });
 
-# Keyword search in prompts
-# Keyword search in context
-# Pattern matching in modified files
+  const stats = await execa('npx', ['entirekit', 'stats', '--json']);
+  writeFileSync('analysis/stats.json', stats.stdout, 'utf8');
+
+  await execa(
+    'npx',
+    ['entirekit', 'report', '--limit', '100', '--output', 'analysis/dashboard.html', '--no-open'],
+    { stdio: 'inherit' }
+  );
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
 ### 8.3 Checkpoint Comparison
 
-See `entirekit diff`:
-
 ```bash
-# Compare changes between two checkpoints
-# Query file modification history
-# Track token usage changes
+npx entirekit diff <hash1> <hash2>
+npx entirekit diff <hash1> <hash2> --json > analysis/diff.json
 ```
 
 ## 9. Performance Tips
 
 ### Caching
 
-Since metadata is accessed frequently, consider caching in scripts:
+Prefer JSON exports from the TypeScript CLI as reusable cache artifacts:
 
 ```bash
-# First run: create metadata cache
-git log entire/checkpoints/v1 --format="%H" | while read hash; do
-  get_metadata_path $hash > /tmp/checkpoint_paths.txt
-done
+mkdir -p .cache/entirekit
 
-# Subsequent access: use cache
-cat /tmp/checkpoint_paths.txt | while read path; do
-  git show $path:$path | jq .session_id
-done
+npx entirekit stats --limit 200 --json > .cache/entirekit/stats.json
+npx entirekit report --limit 200 --export-json .cache/entirekit/report.json --no-open
 ```
 
 ### Parallel Processing
 
-Use `xargs -P` to parallelize when analyzing a large number of checkpoints:
+For large repositories, run independent CLI analyses in parallel:
 
 ```bash
-# Parallel processing with 4 processes
-git log entire/checkpoints/v1 --format="%H" -50 | \
-  xargs -P 4 -I {} bash -c 'analyze_checkpoint "$@"' _ {}
+mkdir -p analysis
+
+npx entirekit stats --json > analysis/stats.json &
+npx entirekit search "auth" --limit 200 --json > analysis/search-auth.json &
+npx entirekit search "billing" --limit 200 --json > analysis/search-billing.json &
+wait
 ```
 
 ### Handling Large Files

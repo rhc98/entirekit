@@ -983,47 +983,28 @@ git diff <hash1> <hash2> -- src/Button.tsx
 
 ## Advanced Tips
 
-### Automation: Generate Daily Report
+### Automation: Generate Daily Report (TypeScript/CLI)
 
 ```bash
-#!/bin/bash
-# daily-report.sh
+mkdir -p ~/reports
 
-DATE=$(date +%Y-%m-%d)
-OUTPUT=~/reports/checkpoint-$DATE.txt
-
-echo "=== Daily Checkpoint Report ===" > $OUTPUT
-echo "Date: $DATE" >> $OUTPUT
-echo "" >> $OUTPUT
-
-echo "Today's work:" >> $OUTPUT
-git entirekit today >> $OUTPUT
-echo "" >> $OUTPUT
-
-echo "Statistics:" >> $OUTPUT
-git entirekit stats >> $OUTPUT
-
-echo "Report saved to: $OUTPUT"
-open $OUTPUT
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --output ~/reports/checkpoint-2026-02-13.html \
+  --no-open
 ```
 
-Usage:
-```bash
-chmod +x daily-report.sh
-./daily-report.sh
-```
-
-### Automation: Weekly Report
+### Automation: Weekly Report (TypeScript/CLI)
 
 ```bash
-#!/bin/bash
-# weekly-report.sh
+mkdir -p ~/reports
 
-WEEK=$(date +%Y-week%V)
-OUTPUT=~/reports/checkpoint-$WEEK.html
-
-git entirekit report --limit 100 --output $OUTPUT
-open $OUTPUT
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --output ~/reports/checkpoint-week-07-2026.html \
+  --no-open
 ```
 
 ### Data Extraction: JSON Parsing

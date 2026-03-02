@@ -3,7 +3,7 @@
 # EntireKit 리포트 템플릿
 
 checkpoint 데이터를 분석하고 공유하기 위한 마크다운 리포트 템플릿 모음입니다.
-일일, 주간, 월간, 그리고 커스텀 기간 리포트를 bash 스크립트로 자동 생성할 수 있습니다.
+일일, 주간, 월간, 커스텀 기간 리포트를 TypeScript 실행기 또는 CLI 명령으로 자동 생성할 수 있습니다.
 
 ## 개요
 
@@ -149,165 +149,47 @@ checkpoint 데이터를 분석하고 공유하기 위한 마크다운 리포트 
 - **AI Contribution**: 81.0%
 ```
 
-### Bash 스크립트
+### TypeScript/CLI 실행기
 
 ```bash
-#!/bin/bash
-# daily-report.sh - 일일 리포트 생성
+mkdir -p reports
 
-set -euo pipefail
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --export-json reports/daily-2026-02-13.json \
+  --output reports/daily-2026-02-13.html \
+  --no-open
+```
 
-TARGET_DATE="${1:-$(date +%Y-%m-%d)}"
-OUTPUT_FILE="checkpoint-report-daily-${TARGET_DATE}.md"
+```ts
+// scripts/daily-report.ts
+import { execa } from 'execa';
 
-# 헬퍼 함수
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
+async function main(): Promise<void> {
+  await execa(
+    'npx',
+    [
+      'entirekit',
+      'report',
+      '--since',
+      '2026-02-13',
+      '--until',
+      '2026-02-14',
+      '--export-json',
+      'reports/daily-2026-02-13.json',
+      '--output',
+      'reports/daily-2026-02-13.html',
+      '--no-open',
+    ],
+    { stdio: 'inherit' }
+  );
 }
 
-# 날짜 범위 설정
-START_DATE="$TARGET_DATE"
-END_DATE=$(date -d "$TARGET_DATE +1 day" +%Y-%m-%d)
-
-# 데이터 수집
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$END_DATE" --format="%H")
-
-if [ -z "$HASHES" ]; then
-  echo "❌ 해당 날짜에 checkpoint가 없습니다."
-  exit 1
-fi
-
-# 통계 계산
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE=0
-TOTAL_CALLS=0
-AGENT_LINES=0
-HUMAN_MODIFIED=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-SESSION_COUNT=0
-declare -A FILE_COUNTS
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # 토큰 통계
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE=$((TOTAL_CACHE + cache))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    # AI 기여도 통계
-    agent=$(echo "$data" | jq -r '.initial_attribution.agent_lines // 0')
-    human=$(echo "$data" | jq -r '.initial_attribution.human_modified // 0')
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-
-    if [ "$agent" != "0" ] || [ "$human" != "0" ]; then
-      AGENT_LINES=$((AGENT_LINES + agent))
-      HUMAN_MODIFIED=$((HUMAN_MODIFIED + human))
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # 파일 통계
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    SESSION_COUNT=$((SESSION_COUNT + 1))
-  fi
-done <<< "$HASHES"
-
-# 평균 AI 기여도
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# TOP 5 파일
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -5 | awk '{print "| " $2 " | " $1 " |"}'
-)
-
-# 브랜치 정보
-MAIN_BRANCH=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$END_DATE" --format="%H" | head -1 | xargs -I {} git show {}:$(get_metadata_path {}) 2>/dev/null | jq -r '.branch // "unknown"')
-
-# 리포트 생성
-cat > "$OUTPUT_FILE" << EOF
-# Daily Checkpoint Report - $TARGET_DATE
-
-## 요약
-
-| 항목 | 값 |
-|------|-----|
-| 세션 수 | $SESSION_COUNT |
-| 총 토큰 사용 | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT))) |
-| AI 기여도 | $AVG_AI_PCT% |
-| 수정 파일 수 | ${#FILE_COUNTS[@]} |
-| 주요 브랜치 | $MAIN_BRANCH |
-
-## 통계
-
-### 토큰 사용량
-- **Input**: $(printf "%'d" $TOTAL_INPUT) tokens
-- **Output**: $(printf "%'d" $TOTAL_OUTPUT) tokens
-- **Cache Read**: $(printf "%'d" $TOTAL_CACHE) tokens
-- **API Calls**: $TOTAL_CALLS회
-
-### AI 기여도
-- **평균 AI 기여도**: $AVG_AI_PCT%
-- **기여한 라인 수**: $(printf "%'d" $AGENT_LINES)
-- **사람이 수정한 라인**: $(printf "%'d" $HUMAN_MODIFIED)
-
-## 핫 파일 (자주 수정된 파일)
-
-| 파일 | 수정 횟수 |
-|------|----------|
-$HOTFILES
-
-## 세션 목록
-
-EOF
-
-# 각 세션 정보 추가
-i=1
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    time=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f2 | cut -d'+' -f1)
-    branch=$(echo "$data" | jq -r '.branch // "unknown"')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-    files=$(echo "$data" | jq -r '.files_touched | length // 0')
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-
-    cat >> "$OUTPUT_FILE" << EOF
-### Session $i: $time
-- **Branch**: $branch
-- **Output Tokens**: $(printf "%'d" $output)
-- **API Calls**: $calls
-- **Files Modified**: $files
-- **AI Contribution**: $(printf "%.1f" $pct)%
-
-EOF
-    i=$((i + 1))
-  fi
-done <<< "$HASHES"
-
-echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
 ---
@@ -414,165 +296,17 @@ echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
 - 금요일에 생산성 최고조 (주간 업무 마무리)
 ```
 
-### Bash 스크립트
+### TypeScript/CLI 실행기
 
 ```bash
-#!/bin/bash
-# weekly-report.sh - 주간 리포트 생성
+mkdir -p reports
 
-set -euo pipefail
-
-WEEK="${1:-$(date +%V)}"
-YEAR="${2:-$(date +%Y)}"
-OUTPUT_FILE="checkpoint-report-weekly-${YEAR}-W${WEEK}.md"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-# 해당 주의 월요일, 일요일 계산
-MONDAY=$(date -d "$YEAR-W$WEEK-1" +%Y-%m-%d)
-SUNDAY=$(date -d "$YEAR-W$WEEK-0" +%Y-%m-%d)
-
-HASHES=$(git log entire/checkpoints/v1 --since="$MONDAY" --until="$(date -d "$SUNDAY +1 day" +%Y-%m-%d)" --format="%H")
-
-# 통계 계산
-declare -A DAILY_SESSIONS
-declare -A DAILY_TOKENS
-declare -A DAILY_CALLS
-declare -A FILE_COUNTS
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE=0
-TOTAL_CALLS=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-ACTIVE_DAYS=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    date=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f1)
-    dayofweek=$(date -d "$date" +%A)
-
-    # 일일 통계
-    DAILY_SESSIONS["$dayofweek"]=$((${DAILY_SESSIONS["$dayofweek"]:-0} + 1))
-
-    # 토큰 통계
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE=$((TOTAL_CACHE + cache))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    DAILY_TOKENS["$dayofweek"]=$((${DAILY_TOKENS["$dayofweek"]:-0} + output))
-    DAILY_CALLS["$dayofweek"]=$((${DAILY_CALLS["$dayofweek"]:-0} + calls))
-
-    # AI 기여도
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-    if [ "$pct" != "0" ]; then
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # 파일 통계
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-# 활동 일수 계산
-ACTIVE_DAYS=${#DAILY_SESSIONS[@]}
-
-# 평균 AI 기여도
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# 일평균 세션 수
-AVG_SESSIONS=$(echo "scale=1; $TOTAL_SESSIONS / $ACTIVE_DAYS" | bc -l)
-
-# TOP 8 파일
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -8 | awk '{print "| " $2 " | " $1 " | " (match($2, /\//) ? substr($2, 1, index($2, "/") - 1) : ".") " |"}'
-)
-
-# 요일별 데이터 테이블 행
-DAYNAMES=("Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday")
-DAYTABLE=""
-for day in "${DAYNAMES[@]}"; do
-  sessions=${DAILY_SESSIONS["$day"]:-0}
-  tokens=${DAILY_TOKENS["$day"]:-0}
-  calls=${DAILY_CALLS["$day"]:-0}
-  DAYTABLE+="| $(echo $day | sed 's/Monday/월요일/;s/Tuesday/화요일/;s/Wednesday/수요일/;s/Thursday/목요일/;s/Friday/금요일/;s/Saturday/토요일/;s/Sunday/일요일/') | $sessions | $(printf "%'d" $tokens) | $calls |\n"
-done
-
-# 리포트 생성
-cat > "$OUTPUT_FILE" << EOF
-# Weekly Checkpoint Report - Week $(printf "%02d" $WEEK)/$YEAR
-
-## 개요
-
-| 항목 | 값 |
-|------|-----|
-| 총 세션 수 | $TOTAL_SESSIONS |
-| 일평균 세션 수 | $AVG_SESSIONS |
-| 총 토큰 사용 | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT))) |
-| 총 API 호출 | $TOTAL_CALLS |
-| 전체 AI 기여도 | $AVG_AI_PCT% |
-| 수정된 파일 수 | ${#FILE_COUNTS[@]} |
-| 활동 일수 | $ACTIVE_DAYS |
-
-## 생산성 트렌드
-
-### 일일 세션 분포
-
-| 요일 | 세션 수 | 토큰 사용 | API 호출 |
-|------|--------|---------|---------|
-EOF
-
-echo -ne "$DAYTABLE" >> "$OUTPUT_FILE"
-
-cat >> "$OUTPUT_FILE" << EOF
-
-## TOP 파일
-
-| 파일 | 수정 횟수 | 디렉토리 |
-|------|----------|---------|
-$HOTFILES
-
-## 통계 상세
-
-### 토큰 분석
-- **Input**: $(printf "%'d" $TOTAL_INPUT) tokens
-- **Output**: $(printf "%'d" $TOTAL_OUTPUT) tokens
-- **Cache Read**: $(printf "%'d" $TOTAL_CACHE) tokens
-- **총합**: $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE))) tokens
-
-### AI 기여도
-- **평균**: $AVG_AI_PCT%
-- **세션 수**: $AGENT_PCT_COUNT
-
----
-
-**생성일시**: $(date '+%Y-%m-%d %H:%M:%S')
-EOF
-
-echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --export-json reports/weekly-2026-W07.json \
+  --output reports/weekly-2026-W07.html \
+  --no-open
 ```
 
 ---
@@ -787,193 +521,17 @@ echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
 **데이터 범위**: 2026-02-01 00:00:00 ~ 2026-02-28 23:59:59
 ```
 
-### Bash 스크립트
+### TypeScript/CLI 실행기
 
 ```bash
-#!/bin/bash
-# monthly-report.sh - 월간 리포트 생성 (advanced-usage.md 예제 개선)
+mkdir -p reports
 
-set -euo pipefail
-
-MONTH="${1:-$(date +%Y-%m)}"
-OUTPUT_FILE="checkpoint-report-monthly-${MONTH}.md"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-# 날짜 범위
-YEAR=$(echo "$MONTH" | cut -d'-' -f1)
-MONTH_NUM=$(echo "$MONTH" | cut -d'-' -f2)
-START_DATE="$MONTH-01"
-LAST_DAY=$(date -d "$YEAR-$MONTH_NUM-01 +1 month -1 day" +%d)
-END_DATE="$MONTH-$LAST_DAY"
-
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$(date -d "$END_DATE +1 day" +%Y-%m-%d)" --format="%H")
-
-# 통계 계산
-declare -A FILE_COUNTS
-declare -A WEEKLY_SESSIONS
-declare -A WEEKLY_TOKENS
-declare -A BRANCH_STATS
-
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-TOTAL_CACHE_READ=0
-TOTAL_CACHE_CREATE=0
-TOTAL_CALLS=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # 주 번호 계산
-    date=$(echo "$data" | jq -r '.created_at // "unknown"' | cut -d'T' -f1)
-    week=$(date -d "$date" +%V)
-
-    # 토큰 통계
-    input=$(echo "$data" | jq -r '.token_usage.input_tokens // 0')
-    output=$(echo "$data" | jq -r '.token_usage.output_tokens // 0')
-    cache_read=$(echo "$data" | jq -r '.token_usage.cache_read_tokens // 0')
-    cache_create=$(echo "$data" | jq -r '.token_usage.cache_creation_tokens // 0')
-    calls=$(echo "$data" | jq -r '.token_usage.api_call_count // 0')
-
-    TOTAL_INPUT=$((TOTAL_INPUT + input))
-    TOTAL_OUTPUT=$((TOTAL_OUTPUT + output))
-    TOTAL_CACHE_READ=$((TOTAL_CACHE_READ + cache_read))
-    TOTAL_CACHE_CREATE=$((TOTAL_CACHE_CREATE + cache_create))
-    TOTAL_CALLS=$((TOTAL_CALLS + calls))
-
-    # 주간 통계
-    WEEKLY_SESSIONS["$week"]=$((${WEEKLY_SESSIONS["$week"]:-0} + 1))
-    WEEKLY_TOKENS["$week"]=$((${WEEKLY_TOKENS["$week"]:-0} + output))
-
-    # AI 기여도
-    pct=$(echo "$data" | jq -r '.initial_attribution.agent_percentage // 0')
-    if [ "$pct" != "0" ]; then
-      AGENT_PCT_SUM=$(echo "$AGENT_PCT_SUM + $pct" | bc -l)
-      AGENT_PCT_COUNT=$((AGENT_PCT_COUNT + 1))
-    fi
-
-    # 파일 통계
-    while read -r file; do
-      FILE_COUNTS["$file"]=$((${FILE_COUNTS["$file"]:-0} + 1))
-    done < <(echo "$data" | jq -r '.files_touched[]? // empty')
-
-    # 브랜치 통계
-    branch=$(echo "$data" | jq -r '.branch // "unknown"')
-    BRANCH_STATS["$branch"]=$((${BRANCH_STATS["$branch"]:-0} + 1))
-
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-# 계산
-AVG_AI_PCT=0
-if [ "$AGENT_PCT_COUNT" -gt 0 ]; then
-  AVG_AI_PCT=$(echo "scale=1; $AGENT_PCT_SUM / $AGENT_PCT_COUNT" | bc -l)
-fi
-
-# 비용 계산 (Claude 3.5 Sonnet 기준)
-COST_INPUT=$(echo "scale=2; $TOTAL_INPUT / 1000 * 0.003" | bc -l)
-COST_OUTPUT=$(echo "scale=2; $TOTAL_OUTPUT / 1000 * 0.015" | bc -l)
-COST_CACHE_READ=$(echo "scale=2; $TOTAL_CACHE_READ / 1000 * 0.0003" | bc -l)
-COST_CACHE_CREATE=$(echo "scale=2; $TOTAL_CACHE_CREATE / 1000 * 0.00375" | bc -l)
-TOTAL_COST=$(echo "$COST_INPUT + $COST_OUTPUT + $COST_CACHE_READ + $COST_CACHE_CREATE" | bc -l)
-
-# TOP 10 파일
-HOTFILES=$(
-  for file in "${!FILE_COUNTS[@]}"; do
-    echo "${FILE_COUNTS[$file]} $file"
-  done | sort -rn | head -10 | awk '{print "| " $2 " | " $1 " | " (match($2, /\//) ? substr($2, 1, index($2, "/") - 1) : ".") " | - |"}'
-)
-
-# 브랜치 정보
-BRANCHES=$(
-  for branch in "${!BRANCH_STATS[@]}"; do
-    echo "${BRANCH_STATS[$branch]} $branch"
-  done | sort -rn | head -5 | awk '{print "| " $2 " | " $1 " | 0 | 0% |"}'
-)
-
-# 리포트 생성
-cat > "$OUTPUT_FILE" << EOF
-# Monthly Checkpoint Report - $MONTH
-
-## Executive Summary
-
-$MONTH의 개발 활동을 요약합니다.
-
-- **총 세션**: ${TOTAL_SESSIONS}개
-- **평균 AI 기여도**: ${AVG_AI_PCT}%
-- **총 토큰 사용**: $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE_READ + TOTAL_CACHE_CREATE)))개
-- **추정 비용**: \$$TOTAL_COST
-
-## 월간 통계
-
-| 항목 | 값 |
-|------|-----|
-| 세션 수 | $TOTAL_SESSIONS |
-| 평균 AI 기여도 | ${AVG_AI_PCT}% |
-| 캐시 효율성 | $(echo "scale=1; $TOTAL_CACHE_READ / ($TOTAL_INPUT + $TOTAL_CACHE_READ) * 100" | bc -l)% |
-| 수정 파일 수 | ${#FILE_COUNTS[@]} |
-
-## 비용 분석
-
-| 항목 | 사용량 | 단가 | 비용 |
-|------|--------|------|------|
-| Input Tokens | $(printf "%'d" $TOTAL_INPUT) | \$0.003/1K | \$$COST_INPUT |
-| Output Tokens | $(printf "%'d" $TOTAL_OUTPUT) | \$0.015/1K | \$$COST_OUTPUT |
-| Cache Read | $(printf "%'d" $TOTAL_CACHE_READ) | \$0.0003/1K | \$$COST_CACHE_READ |
-| Cache Creation | $(printf "%'d" $TOTAL_CACHE_CREATE) | \$0.00375/1K | \$$COST_CACHE_CREATE |
-| **총합** | $(printf "%'d" $((TOTAL_INPUT + TOTAL_OUTPUT + TOTAL_CACHE_READ + TOTAL_CACHE_CREATE))) | | **\$$TOTAL_COST** |
-
-## 핫 파일 분석
-
-| 파일 | 수정 횟수 | 디렉토리 | 최근 수정 |
-|------|----------|---------|---------|
-$HOTFILES
-
-## 브랜치 분석
-
-| 브랜치 | 세션 | 토큰 | AI % |
-|--------|------|------|------|
-$BRANCHES
-
-## 주간별 분석
-
-EOF
-
-# 주간 데이터 추가
-for week in $(echo "${!WEEKLY_SESSIONS[@]}" | tr ' ' '\n' | sort -n); do
-  week_start=$(date -d "$YEAR-W$week-1" +%Y-%m-%d)
-  week_end=$(date -d "$YEAR-W$week-0" +%Y-%m-%d)
-  sessions=${WEEKLY_SESSIONS[$week]:-0}
-  tokens=${WEEKLY_TOKENS[$week]:-0}
-
-  cat >> "$OUTPUT_FILE" << EOF
-
-### Week $(printf "%02d" $week) ($week_start ~ $week_end)
-- 세션: $sessions
-- 토큰: $(printf "%'d" $tokens)
-
-EOF
-done
-
-cat >> "$OUTPUT_FILE" << EOF
-
----
-
-**생성일시**: $(date '+%Y-%m-%d %H:%M:%S')
-**데이터 범위**: ${START_DATE} ~ ${END_DATE}
-
-EOF
-
-echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-28 \
+  --export-json reports/monthly-2026-02.json \
+  --output reports/monthly-2026-02.html \
+  --no-open
 ```
 
 ---
@@ -982,59 +540,17 @@ echo "✅ 리포트 생성 완료: $OUTPUT_FILE"
 
 특정 기간의 심층 분석 리포트입니다.
 
+### TypeScript/CLI 실행기
+
 ```bash
-#!/bin/bash
-# custom-range-report.sh - 날짜 범위 리포트 생성
+mkdir -p reports
 
-set -euo pipefail
-
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 START_DATE END_DATE [OUTPUT_FILE]"
-  echo "Example: $0 2026-02-01 2026-02-13"
-  exit 1
-fi
-
-START_DATE="$1"
-END_DATE="$2"
-OUTPUT_FILE="${3:-checkpoint-report-${START_DATE}_to_${END_DATE}.md}"
-
-get_metadata_path() {
-  local hash=$1
-  git ls-tree -r --name-only "$hash" 2>/dev/null | grep '/[0-9]/metadata.json$' | tail -1
-}
-
-HASHES=$(git log entire/checkpoints/v1 --since="$START_DATE" --until="$(date -d "$END_DATE +1 day" +%Y-%m-%d)" --format="%H")
-
-# 통계 계산 (위의 월간 리포트와 동일한 방식)
-declare -A FILE_COUNTS
-TOTAL_SESSIONS=0
-TOTAL_INPUT=0
-TOTAL_OUTPUT=0
-AGENT_PCT_SUM=0
-AGENT_PCT_COUNT=0
-
-while read -r hash; do
-  metadata_path=$(get_metadata_path "$hash")
-  if [ -n "$metadata_path" ]; then
-    data=$(git show "$hash:$metadata_path" 2>/dev/null) || continue
-
-    # 토큰 및 기여도 통계...
-    TOTAL_SESSIONS=$((TOTAL_SESSIONS + 1))
-  fi
-done <<< "$HASHES"
-
-cat > "$OUTPUT_FILE" << EOF
-# Custom Range Report
-
-**기간**: $START_DATE ~ $END_DATE
-**총 세션**: $TOTAL_SESSIONS
-
-## 요약
-...
-
-EOF
-
-echo "✅ 커스텀 리포트 생성: $OUTPUT_FILE"
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-13 \
+  --export-json reports/custom-2026-02-01-to-2026-02-13.json \
+  --output reports/custom-2026-02-01-to-2026-02-13.html \
+  --no-open
 ```
 
 ---
@@ -1118,109 +634,77 @@ git entirekit report --output ~/reports/feb-report.html --no-open
 ### 예시 1: 일일 리포트 생성 및 저장
 
 ```bash
-# 어제 리포트 생성
-./daily-report.sh $(date -d "yesterday" +%Y-%m-%d)
-
-# 특정 날짜
-./daily-report.sh 2026-02-13
-
-# 파일로 저장
-./daily-report.sh 2026-02-13 > report.md
-
-# 팀원에게 공유
-cat checkpoint-report-daily-2026-02-13.md | mail -s "Daily Report" team@company.com
+npx entirekit report \
+  --since 2026-02-13 \
+  --until 2026-02-14 \
+  --output ./reports/daily-2026-02-13.html \
+  --no-open
 ```
 
 ### 예시 2: 주간 리포트 생성
 
 ```bash
-# 현재 주 리포트
-./weekly-report.sh
-
-# 특정 주
-./weekly-report.sh 07 2026
-
-# 슬랙 봇에 전송
-curl -X POST https://hooks.slack.com/services/... \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"text\": \"Weekly Report - Week 07\",
-    \"attachments\": [{
-      \"text\": \"$(cat checkpoint-report-weekly-2026-W07.md)\"
-    }]
-  }"
+npx entirekit report \
+  --since 2026-02-10 \
+  --until 2026-02-17 \
+  --output ./reports/weekly-2026-W07.html \
+  --no-open
 ```
 
 ### 예시 3: 월간 리포트 생성 및 자동화
 
 ```bash
-# 현재 달
-./monthly-report.sh
+npx entirekit report \
+  --since 2026-02-01 \
+  --until 2026-02-28 \
+  --output ./reports/monthly-2026-02.html \
+  --export-json ./reports/monthly-2026-02.json \
+  --no-open
 
-# 특정 달
-./monthly-report.sh 2026-02
-
-# crontab에 추가 (매월 1일 9시)
-0 9 1 * * /path/to/monthly-report.sh $(date +\%Y-\%m --date="yesterday") && \
-  mailx -s "Monthly Report" manager@company.com < checkpoint-report-monthly-*.md
+# Crontab (매월 1일 09:00)
+0 9 1 * * cd /path/to/repo && npx entirekit report --since $(date +\%Y-\%m-01) --output ./reports/monthly-latest.html --no-open
 ```
 
-### 예시 4: 커스텀 범위 리포트
+### 예시 4: 커스텀 기간 리포트
 
 ```bash
-# 특정 기간
-./custom-range-report.sh 2026-02-01 2026-02-13
-
-# 프로젝트 완료 후 분석
-./custom-range-report.sh 2026-01-15 2026-02-13 project-final-report.md
-
-# 동료와 공유
-open checkpoint-report-2026-02-01_to_2026-02-13.md
+npx entirekit report \
+  --since 2026-01-15 \
+  --until 2026-02-13 \
+  --output ./reports/project-final-report.html \
+  --export-json ./reports/project-final-report.json \
+  --no-open
 ```
 
 ### 예시 5: HTML 대시보드 생성
 
 ```bash
-# 인터랙티브 리포트 생성 (자동으로 브라우저에서 열림)
-git entirekit report
-
-# 월간 리포트 생성
-git entirekit report --since 2026-02-01 --until 2026-03-01 \
-  --output ~/Desktop/feb-2026-report.html
-
-# CI/CD에서 자동 생성 및 저장
-git entirekit report --no-open --output ./reports/checkpoint-$(date +%Y-%m-%d).html
+npx entirekit report
+npx entirekit report --limit 20 --no-open --output ./reports/latest-20.html
+npx entirekit report --branch feature/auth --since 2026-02-01 --until 2026-02-13 --no-open
 ```
-
----
 
 ## 7. 설정 파일 예시
 
-프로젝트 루트의 `.entire/config.sh`:
+프로젝트 루트의 `.entire/report-config.json`:
 
-```bash
-# 리포트 설정
-REPORT_OUTPUT_DIR="./reports"
-REPORT_AUTO_OPEN=true
-REPORT_THEME="dark"  # light, dark, auto
-
-# 비용 설정 (Claude 3.5 Sonnet 기준)
-COST_PER_1K_OUTPUT=0.015
-COST_PER_1K_INPUT=0.003
-COST_PER_1K_CACHE_READ=0.0003
-COST_PER_1K_CACHE_CREATE=0.00375
-
-# 자동화 설정
-AUTO_DAILY_REPORT=true      # 매일 자동 생성
-AUTO_WEEKLY_REPORT=true     # 매주 월요일 생성
-AUTO_MONTHLY_REPORT=true    # 매월 1일 생성
-
-# 알림 설정
-SLACK_WEBHOOK_URL=""        # Slack 통합
-EMAIL_RECIPIENT=""          # 이메일 수신자
+```json
+{
+  "outputDir": "./reports",
+  "autoOpen": false,
+  "defaultLimit": 100,
+  "cost": {
+    "inputPer1k": 0.003,
+    "outputPer1k": 0.015,
+    "cacheReadPer1k": 0.0003,
+    "cacheCreatePer1k": 0.00375
+  },
+  "notifications": {
+    "slackWebhookUrl": "",
+    "emailRecipient": ""
+  }
+}
 ```
-
----
 
 ## 모범 사례
 
@@ -1230,7 +714,7 @@ EMAIL_RECIPIENT=""          # 이메일 수신자
 # ~/.bashrc 또는 ~/.zshrc에 추가
 alias morning='git entirekit yesterday'
 alias weekly='git entirekit week && git entirekit stats'
-alias monthly='./monthly-report.sh'
+alias monthly='npx entirekit report --since 2026-02-01 --until 2026-02-28 --no-open'
 ```
 
 ### 2. CI/CD 통합
@@ -1249,7 +733,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Generate Weekly Report
-        run: ./weekly-report.sh
+        run: npx entirekit report --since 2026-02-10 --until 2026-02-17 --no-open --output ./reports/weekly.html
       - name: Upload Report
         uses: actions/upload-artifact@v3
         with:

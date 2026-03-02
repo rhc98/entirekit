@@ -2,7 +2,7 @@
 
 # Checkpoint Analysis Recipe Collection
 
-A collection of copy-pasteable bash/jq one-liners that make complex analysis simple. Each recipe is designed for immediate use.
+A collection of copy-pasteable CLI/jq one-liners that make complex analysis simple. Each recipe is designed for immediate use.
 
 ---
 
@@ -1346,15 +1346,15 @@ sudo apt-get install jq
 jq --version
 ```
 
-### Permission Denied Error
+### Command Not Found / Permission Error
 
 ```bash
-# Add execute permission to script
-chmod +x script.sh
-./script.sh
+# Reinstall or update the CLI
+npx entirekit install
 
-# Or run directly with bash
-bash script.sh
+# Run directly with CLI (no chmod needed)
+npx entirekit stats
+npx entirekit report --limit 20 --no-open
 ```
 
 ---

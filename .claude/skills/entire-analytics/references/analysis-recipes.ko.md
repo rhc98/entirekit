@@ -2,7 +2,7 @@
 
 # Checkpoint 분석 레시피 모음
 
-복잡한 분석을 간단하게 만드는 복사-붙여넣기 가능한 bash/jq 원라이너 모음입니다. 각 레시피는 즉시 사용 가능하도록 설계되었습니다.
+복잡한 분석을 간단하게 만드는 복사-붙여넣기 가능한 CLI/jq 원라이너 모음입니다. 각 레시피는 즉시 사용 가능하도록 설계되었습니다.
 
 ---
 
@@ -1346,15 +1346,15 @@ sudo apt-get install jq
 jq --version
 ```
 
-### 권한 거부 오류
+### 명령어 없음 / 권한 오류
 
 ```bash
-# 스크립트에 실행 권한 추가
-chmod +x script.sh
-./script.sh
+# CLI 재설치 또는 업데이트
+npx entirekit install
 
-# 또는 bash로 직접 실행
-bash script.sh
+# CLI 직접 실행 (chmod 불필요)
+npx entirekit stats
+npx entirekit report --limit 20 --no-open
 ```
 
 ---
