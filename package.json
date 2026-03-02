@@ -1,6 +1,6 @@
 {
   "name": "entirekit",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "CLI toolkit for analyzing EntireKit data and installing git entirekit aliases",
   "license": "MIT",
   "type": "module",
