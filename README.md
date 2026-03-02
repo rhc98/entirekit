@@ -2,6 +2,9 @@
 
 # entirekit
 
+[![npm version](https://img.shields.io/npm/v/entirekit?logo=npm)](https://www.npmjs.com/package/entirekit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rhc98/entirekit/blob/main/LICENSE)
+
 CLI toolkit for analyzing EntireKit data and installing `git entirekit <command>` aliases.
 
 ## Install
@@ -40,5 +43,5 @@ Checkpoint analysis commands (`stats`, `search`, `diff`, `report`) require check
 
 ## Full Docs
 
-- English: `.entire/ENTIREKIT.md`
-- Korean: `.entire/ENTIREKIT.ko.md`
+- English: [`.entire/ENTIREKIT.md`](https://github.com/rhc98/entirekit/blob/main/.entire/ENTIREKIT.md)
+- Korean: [`.entire/ENTIREKIT.ko.md`](https://github.com/rhc98/entirekit/blob/main/.entire/ENTIREKIT.ko.md)

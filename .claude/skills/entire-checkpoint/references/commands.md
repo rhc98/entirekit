@@ -1165,10 +1165,10 @@ cat ~/cache/weekly-stats.txt
 
 ## Additional Resources
 
-- [Quick Start Guide](../quick-start.md) - Get started in 5 minutes
-- [Advanced Usage](./advanced-usage.md) - More complex scenarios
-- [Main README](../README.md) - Complete documentation
-- [Checkpoint Structure](./checkpoint-structure.md) - Detailed data format
+- [Quick Start Guide](../../../../.entire/docs/quick-start.md) - Get started in 5 minutes
+- [Advanced Usage](../../../../.entire/docs/advanced-usage.md) - More complex scenarios
+- [Main README](../../../../README.md) - Complete documentation
+- [Checkpoint Structure](./data-structure.md) - Detailed data format
 
 ---
 

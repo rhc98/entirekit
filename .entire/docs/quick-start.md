@@ -228,7 +228,7 @@ You're now ready to use the EntireKit tool!
 
 **Next:**
 - [Advanced Usage](./advanced-usage.md) - More powerful features
-- [Main README](../README.md) - Full documentation
+- [Main README](../ENTIREKIT.md) - Full documentation
 
 **Tip:** Git aliases are configured per project,
 so to use them in another project, run `npx entirekit install` in that project as well.

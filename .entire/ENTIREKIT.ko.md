@@ -1,4 +1,4 @@
-[English](README.md)
+[English](ENTIREKIT.md)
 
 # EntireKit
 
@@ -229,8 +229,8 @@ npx entirekit --version
 
 ## 📖 더 알아보기
 
-- [빠른 시작 가이드](./docs/quick-start.md) - 5분 안에 시작하기
-- [고급 활용법](./docs/advanced-usage.md) - 심화 기능과 팁
+- [빠른 시작 가이드](./docs/quick-start.ko.md) - 5분 안에 시작하기
+- [고급 활용법](./docs/advanced-usage.ko.md) - 심화 기능과 팁
 
 ## 💡 자주 묻는 질문
 

@@ -1165,10 +1165,10 @@ cat ~/cache/weekly-stats.txt
 
 ## 추가 자료
 
-- [빠른 시작 가이드](../quick-start.md) - 5분 안에 시작하기
-- [고급 활용법](./advanced-usage.md) - 더 복잡한 시나리오
-- [메인 README](../README.md) - 전체 문서
-- [checkpoint 구조](./checkpoint-structure.md) - 데이터 형식 상세
+- [빠른 시작 가이드](../../../../.entire/docs/quick-start.ko.md) - 5분 안에 시작하기
+- [고급 활용법](../../../../.entire/docs/advanced-usage.ko.md) - 더 복잡한 시나리오
+- [메인 README](../../../../README.ko.md) - 전체 문서
+- [checkpoint 구조](./data-structure.ko.md) - 데이터 형식 상세
 
 ---
 

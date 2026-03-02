@@ -2,6 +2,9 @@
 
 # entirekit
 
+[![npm version](https://img.shields.io/npm/v/entirekit?logo=npm)](https://www.npmjs.com/package/entirekit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rhc98/entirekit/blob/main/LICENSE)
+
 EntireKit 분석 및 `git entirekit <command>` alias 설치를 위한 CLI 도구입니다.
 
 ## 설치
@@ -40,5 +43,5 @@ npx entirekit report --export-json /tmp/entire-report.json --export-csv /tmp/ent
 
 ## 상세 문서
 
-- 영어: `.entire/ENTIREKIT.md`
-- 한국어: `.entire/ENTIREKIT.ko.md`
+- 영어: [`.entire/ENTIREKIT.md`](https://github.com/rhc98/entirekit/blob/main/.entire/ENTIREKIT.md)
+- 한국어: [`.entire/ENTIREKIT.ko.md`](https://github.com/rhc98/entirekit/blob/main/.entire/ENTIREKIT.ko.md)

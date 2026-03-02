@@ -227,8 +227,8 @@ git entirekit search "에러"
 이제 EntireKit 도구를 사용할 준비가 되었습니다!
 
 **다음:**
-- [고급 활용법](./advanced-usage.md) - 더 강력한 기능들
-- [메인 README](../README.md) - 전체 문서
+- [고급 활용법](./advanced-usage.ko.md) - 더 강력한 기능들
+- [메인 README](../ENTIREKIT.ko.md) - 전체 문서
 
 **팁:** Git alias는 프로젝트별로 설정되므로,
 다른 프로젝트에서도 사용하려면 해당 프로젝트에서 `npx entirekit install`를 실행하세요.
