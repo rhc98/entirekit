@@ -159,10 +159,17 @@ export async function runInstall(opts: InstallOptions): Promise<void> {
   // Check entire CLI
   log.plain('Checking Entire installation...');
   try {
-    await execa('entire', ['--version']);
+    await execa('entire', ['version']);
     log.ok('entire CLI is installed.');
-  } catch {
-    log.error('entire CLI not found.');
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      log.error('entire CLI not found.');
+    } else {
+      log.error('Failed to run entire CLI.');
+      if (error && typeof error === 'object' && 'shortMessage' in error && typeof error.shortMessage === 'string') {
+        log.plain(`  ${error.shortMessage}`);
+      }
+    }
     log.plain('');
     log.plain('Entire setup guide:');
     log.plain('  - Official guide: https://github.com/entireio/cli');
