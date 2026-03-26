@@ -10,6 +10,9 @@ import { runDiff } from './commands/diff.js';
 import { runInstall } from './commands/install.js';
 import { runRecent, runToday, runYesterday, runWeek } from './commands/quick.js';
 import { runReport } from './commands/report.js';
+import { runCost } from './commands/cost.js';
+import { runShow } from './commands/show.js';
+import { runSummary } from './commands/summary.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -151,6 +154,56 @@ program
       branch: opts.branch,
       since: opts.since,
       until: opts.until,
+    });
+  });
+
+// cost
+program
+  .command('cost')
+  .description('Analyze estimated API costs')
+  .option('--limit <n>', 'Analyze up to N sessions')
+  .option('--branch <name>', 'Filter by branch name')
+  .option('--since <date>', 'Include sessions on/after DATE (YYYY-MM-DD)')
+  .option('--until <date>', 'Include sessions on/before DATE (YYYY-MM-DD)')
+  .option('--json', 'Print machine-readable JSON output')
+  .action(async (opts) => {
+    const git = new GitClient();
+    await runCost(git, {
+      limit: opts.limit ? parsePositiveIntegerOption(opts.limit, '--limit') : undefined,
+      branch: opts.branch,
+      since: opts.since,
+      until: opts.until,
+      json: opts.json,
+    });
+  });
+
+// show
+program
+  .command('show <hash>')
+  .description('Show detailed info for a single checkpoint')
+  .option('--json', 'Print machine-readable JSON output')
+  .action(async (hash, opts) => {
+    const git = new GitClient();
+    await runShow(git, { hash, ...opts });
+  });
+
+// summary
+program
+  .command('summary')
+  .description('Show daily work summary')
+  .option('--limit <n>', 'Analyze up to N sessions')
+  .option('--branch <name>', 'Filter by branch name')
+  .option('--since <date>', 'Include sessions on/after DATE (YYYY-MM-DD)')
+  .option('--until <date>', 'Include sessions on/before DATE (YYYY-MM-DD)')
+  .option('--json', 'Print machine-readable JSON output')
+  .action(async (opts) => {
+    const git = new GitClient();
+    await runSummary(git, {
+      limit: opts.limit ? parsePositiveIntegerOption(opts.limit, '--limit') : undefined,
+      branch: opts.branch,
+      since: opts.since,
+      until: opts.until,
+      json: opts.json,
     });
   });
 

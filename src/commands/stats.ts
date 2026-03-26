@@ -14,20 +14,27 @@ export type EnrichedMetadata = CheckpointMetadata & {
   __created_at: string;
 };
 
-async function* collectFilteredMetadata(
+async function collectFilteredMetadata(
   git: GitClient,
   opts: FilterOptions
-): AsyncGenerator<EnrichedMetadata> {
-  const hashes = await git.logHashes(CHECKPOINT_BRANCH);
+): Promise<EnrichedMetadata[]> {
+  const allHashes = await git.logHashes(CHECKPOINT_BRANCH);
+  if (allHashes.length === 0) return [];
+
+  const latestHash = allHashes[0]!;
+  const allFiles = await git.listTree(latestHash);
+
+  // Find all metadata.json files
+  const metadataPattern = /\/metadata\.json$/;
+  const metadataPaths = allFiles.filter(path => metadataPattern.test(path));
+
+  const sessions: EnrichedMetadata[] = [];
   let selected = 0;
 
-  for (const hash of hashes) {
-    const metadataPath = await findMetadataPath(git, hash);
-    if (!metadataPath) continue;
-
+  for (const metadataPath of metadataPaths) {
     let metadata: CheckpointMetadata;
     try {
-      const metaJson = await git.showFile(hash, metadataPath);
+      const metaJson = await git.showFile(latestHash, metadataPath);
       metadata = JSON.parse(metaJson);
     } catch {
       continue;
@@ -37,25 +44,27 @@ async function* collectFilteredMetadata(
     const branch = metadata.branch ?? 'unknown';
 
     // Apply filters
-    if (!matchesBranchFilter(branch, opts.branch)) {
-      continue;
-    }
-    if (!matchesDateFilter(createdAt, opts.since, opts.until)) {
-      continue;
-    }
+    if (!matchesBranchFilter(branch, opts.branch)) continue;
+    if (!matchesDateFilter(createdAt, opts.since, opts.until)) continue;
 
-    yield {
+    // Use session directory name as hash identifier
+    const parts = metadataPath.split('/');
+    const hashId = parts.length >= 2 ? parts[parts.length - 2]! : metadataPath;
+
+    sessions.push({
       ...metadata,
-      __hash: hash,
+      __hash: hashId,
       __branch: branch,
       __created_at: createdAt,
-    };
+    });
 
     selected++;
     if (opts.limit && opts.limit > 0 && selected >= opts.limit) {
       break;
     }
   }
+
+  return sessions;
 }
 
 export interface StatsResult {
@@ -197,15 +206,11 @@ export async function runStats(git: GitClient, opts: StatsOptions): Promise<void
   // Verify checkpoint branch exists
   const branchExists = await git.branchExists(CHECKPOINT_BRANCH);
   if (!branchExists) {
-    log.error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
-    process.exit(1);
+    throw new Error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
   }
 
-  // Collect filtered metadata
-  const sessions: EnrichedMetadata[] = [];
-  for await (const session of collectFilteredMetadata(git, opts)) {
-    sessions.push(session);
-  }
+  // Collect filtered metadata (optimized: single listTree call)
+  const sessions = await collectFilteredMetadata(git, opts);
 
   if (sessions.length === 0) {
     if (opts.json) {

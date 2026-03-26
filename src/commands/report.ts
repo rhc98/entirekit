@@ -41,9 +41,7 @@ export async function runReport(git: GitClient, opts: ReportOptions): Promise<vo
   // Check if checkpoint branch exists
   const branchExists = await git.branchExists(CHECKPOINT_BRANCH);
   if (!branchExists) {
-    log.error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
-    log.error("Run 'entire' to create some checkpoints first.");
-    process.exit(1);
+    throw new Error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found. Run 'entire' to create some checkpoints first.`);
   }
 
   // Count revisions
@@ -113,15 +111,23 @@ export async function runReport(git: GitClient, opts: ReportOptions): Promise<vo
 
   // Step 3: Optional JSON export
   if (opts.exportJson) {
-    fs.writeFileSync(opts.exportJson, JSON.stringify(reportData, null, 2), 'utf-8');
-    log.ok(`JSON export saved to: ${opts.exportJson}`);
+    try {
+      fs.writeFileSync(opts.exportJson, JSON.stringify(reportData, null, 2), 'utf-8');
+      log.ok(`JSON export saved to: ${opts.exportJson}`);
+    } catch (error) {
+      log.error(`Failed to write JSON export to '${opts.exportJson}': ${error instanceof Error ? error.message : error}`);
+    }
   }
 
   // Step 4: Optional CSV export
   if (opts.exportCsv) {
-    const csvContent = buildCsvContent(reportData);
-    fs.writeFileSync(opts.exportCsv, csvContent, 'utf-8');
-    log.ok(`CSV export saved to: ${opts.exportCsv}`);
+    try {
+      const csvContent = buildCsvContent(reportData);
+      fs.writeFileSync(opts.exportCsv, csvContent, 'utf-8');
+      log.ok(`CSV export saved to: ${opts.exportCsv}`);
+    } catch (error) {
+      log.error(`Failed to write CSV export to '${opts.exportCsv}': ${error instanceof Error ? error.message : error}`);
+    }
   }
 
   // Step 5: Generate HTML report
@@ -131,19 +137,27 @@ export async function runReport(git: GitClient, opts: ReportOptions): Promise<vo
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outputPath = opts.output ?? path.join(os.tmpdir(), `entire-report-${timestamp}.html`);
 
-  const htmlContent = generateHtml(reportData);
-  fs.writeFileSync(outputPath, htmlContent, 'utf-8');
-
-  spinner3.succeed(`Report saved to: ${outputPath}`);
+  try {
+    const htmlContent = generateHtml(reportData);
+    fs.writeFileSync(outputPath, htmlContent, 'utf-8');
+    spinner3.succeed(`Report saved to: ${outputPath}`);
+  } catch (error) {
+    spinner3.fail(`Failed to write report to '${outputPath}'`);
+    throw error;
+  }
 
   // Print file size
-  const stats = fs.statSync(outputPath);
-  const fileSizeKB = Math.floor(stats.size / 1024);
+  const fileStats = fs.statSync(outputPath);
+  const fileSizeKB = Math.floor(fileStats.size / 1024);
   log.info(`File size: ${fileSizeKB}KB`);
 
   // Step 6: Open in browser
   if (!opts.noOpen) {
-    await openBrowser(outputPath);
-    log.ok('Opened in browser');
+    try {
+      await openBrowser(outputPath);
+      log.ok('Opened in browser');
+    } catch {
+      log.warn(`Could not open browser automatically. Open manually: ${outputPath}`);
+    }
   }
 }

@@ -314,6 +314,31 @@ describe('GitClient', () => {
       ]);
     });
 
+    it('should handle longer abbreviated hashes', async () => {
+      mockedExeca.mockResolvedValueOnce({
+        stdout: 'abc1234def5 Initial commit\n0123456789ab Add feature',
+        stderr: '',
+        exitCode: 0,
+        failed: false,
+        killed: false,
+        signal: undefined,
+        signalDescription: undefined,
+        command: '',
+        escapedCommand: '',
+        cwd: '',
+        isCanceled: false,
+        timedOut: false,
+        pipedFrom: undefined,
+      } as any);
+
+      const result = await git.logOneline('main');
+
+      expect(result).toEqual([
+        { hash: 'abc1234def5', subject: 'Initial commit' },
+        { hash: '0123456789ab', subject: 'Add feature' },
+      ]);
+    });
+
     it('should include optional flags', async () => {
       mockedExeca.mockResolvedValueOnce({
         stdout: 'abc1234 Recent commit',

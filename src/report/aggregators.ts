@@ -136,8 +136,8 @@ export function aggregateTokenStats(sessions: CheckpointMetadata[]): TokenStats 
     total_api_calls: totalApiCalls,
     avg_input: totalInput / sessionCount,
     avg_output: totalOutput / sessionCount,
-    max_output: outputTokens.length > 0 ? Math.max(...outputTokens) : 0,
-    min_output: outputTokens.length > 0 ? Math.min(...outputTokens) : 0,
+    max_output: outputTokens.length > 0 ? outputTokens.reduce((a, b) => Math.max(a, b), -Infinity) : 0,
+    min_output: outputTokens.length > 0 ? outputTokens.reduce((a, b) => Math.min(a, b), Infinity) : 0,
     per_session: perSession,
   };
 }

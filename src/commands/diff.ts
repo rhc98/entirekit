@@ -134,8 +134,7 @@ export async function runDiff(git: GitClient, opts: DiffOptions): Promise<void> 
   // Verify checkpoint branch exists
   const branchExists = await git.branchExists(CHECKPOINT_BRANCH);
   if (!branchExists) {
-    log.error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
-    process.exit(1);
+    throw new Error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
   }
 
   // Find metadata paths for both hashes
@@ -143,8 +142,7 @@ export async function runDiff(git: GitClient, opts: DiffOptions): Promise<void> 
   const metaPath2 = await findMetadataPath(git, hash2);
 
   if (!metaPath1 || !metaPath2) {
-    log.error('metadata.json not found for one or both checkpoints.');
-    process.exit(1);
+    throw new Error('metadata.json not found for one or both checkpoints.');
   }
 
   // Read metadata

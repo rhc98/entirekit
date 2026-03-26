@@ -714,7 +714,7 @@ const STATIC_HTML_PART2 = `  </script>
           else if (ratio <= 0.75) level = 3;
           else level = 4;
         }
-        html += '<div class="heatmap-cell" data-level="' + level + '" title="' + dateStr + ': ' + count + ' session' + (count !== 1 ? 's' : '') + '"></div>';
+        html += '<div class="heatmap-cell" data-level="' + level + '" title="' + escapeHtml(dateStr) + ': ' + count + ' session' + (count !== 1 ? 's' : '') + '"></div>';
       }
       html += '</div>';
       container.innerHTML = html;
@@ -725,7 +725,7 @@ const STATIC_HTML_PART2 = `  </script>
       cardsContainer.innerHTML = sessions.slice(0, 50).map(function(s) {
         return '<div class="session-card">' +
           '<div class="meta">' +
-            '<span class="date">' + shortDate(s.created_at) + '</span>' +
+            '<span class="date">' + escapeHtml(shortDate(s.created_at)) + '</span>' +
             '<span class="branch-tag">' + escapeHtml(truncPath(s.branch, 25)) + '</span>' +
           '</div>' +
           '<div class="stats">' +

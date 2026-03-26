@@ -64,8 +64,9 @@ export class GitClient {
     return stdout.split('\n')
       .filter(line => line.trim() !== '')
       .map(line => {
-        const hash = line.substring(0, 7);
-        const subject = line.substring(8);
+        const spaceIdx = line.indexOf(' ');
+        const hash = spaceIdx === -1 ? line : line.substring(0, spaceIdx);
+        const subject = spaceIdx === -1 ? '' : line.substring(spaceIdx + 1);
         return { hash, subject };
       });
   }
