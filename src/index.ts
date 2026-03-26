@@ -13,6 +13,9 @@ import { runReport } from './commands/report.js';
 import { runCost } from './commands/cost.js';
 import { runShow } from './commands/show.js';
 import { runSummary } from './commands/summary.js';
+import { runHotspots } from './commands/hotspots.js';
+import { runTimeline } from './commands/timeline.js';
+import { runExport } from './commands/export.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -205,6 +208,57 @@ program
       until: opts.until,
       json: opts.json,
     });
+  });
+
+// hotspots
+program
+  .command('hotspots')
+  .description('Identify files that attract repeated AI modifications')
+  .option('--top <n>', 'Show top N hotspot files', '20')
+  .option('--branch <name>', 'Filter by branch name')
+  .option('--since <date>', 'Include sessions on/after DATE (YYYY-MM-DD)')
+  .option('--until <date>', 'Include sessions on/before DATE (YYYY-MM-DD)')
+  .option('--json', 'Print machine-readable JSON output')
+  .action(async (opts) => {
+    const git = new GitClient();
+    await runHotspots(git, {
+      top: parsePositiveIntegerOption(opts.top, '--top'),
+      branch: opts.branch,
+      since: opts.since,
+      until: opts.until,
+      json: opts.json,
+    });
+  });
+
+// timeline
+program
+  .command('timeline')
+  .description('Show terminal activity heatmap')
+  .option('--weeks <n>', 'Number of weeks to display', '12')
+  .option('--branch <name>', 'Filter by branch name')
+  .option('--since <date>', 'Include sessions on/after DATE (YYYY-MM-DD)')
+  .option('--until <date>', 'Include sessions on/before DATE (YYYY-MM-DD)')
+  .option('--json', 'Print machine-readable JSON output')
+  .action(async (opts) => {
+    const git = new GitClient();
+    await runTimeline(git, {
+      weeks: parsePositiveIntegerOption(opts.weeks, '--weeks'),
+      branch: opts.branch,
+      since: opts.since,
+      until: opts.until,
+      json: opts.json,
+    });
+  });
+
+// export
+program
+  .command('export <hash>')
+  .description('Export a checkpoint as files or markdown')
+  .option('--output <path>', 'Output directory or file path')
+  .option('--format <type>', 'Export format: files or md', 'files')
+  .action(async (hash, opts) => {
+    const git = new GitClient();
+    await runExport(git, { hash, output: opts.output, format: opts.format });
   });
 
 program.parse(process.argv);
