@@ -1,10 +1,12 @@
 import { GitClient } from '../git/client.js';
-import { CHECKPOINT_BRANCH, PRICING } from '../constants.js';
+import { CHECKPOINT_BRANCH, DEFAULT_MODEL, getModelPricing } from '../constants.js';
+import type { ModelPricing } from '../constants.js';
 import { log, printJson } from '../utils/output.js';
 import { matchesBranchFilter, matchesDateFilter } from '../utils/filters.js';
 import type { CheckpointMetadata, FilterOptions } from '../types.js';
 
 export interface CostOptions extends FilterOptions {
+  model?: string;
   json?: boolean;
 }
 
@@ -26,6 +28,7 @@ export interface CostResult {
     since: string;
     until: string;
   };
+  model: string;
   pricing: {
     input_per_1k: number;
     output_per_1k: number;
@@ -44,12 +47,12 @@ export interface CostResult {
   top_sessions: SessionCost[];
 }
 
-export function calculateCosts(sessions: CheckpointMetadata[]): CostResult {
+export function calculateCosts(sessions: CheckpointMetadata[], pricing: ModelPricing): CostResult {
   const sessionCosts: SessionCost[] = sessions.map(s => {
-    const inputCost = ((s.token_usage?.input_tokens ?? 0) / 1000) * PRICING.inputPer1k;
-    const outputCost = ((s.token_usage?.output_tokens ?? 0) / 1000) * PRICING.outputPer1k;
-    const cacheReadCost = ((s.token_usage?.cache_read_tokens ?? 0) / 1000) * PRICING.cacheReadPer1k;
-    const cacheCreationCost = ((s.token_usage?.cache_creation_tokens ?? 0) / 1000) * PRICING.cacheCreatePer1k;
+    const inputCost = ((s.token_usage?.input_tokens ?? 0) / 1000) * pricing.inputPer1k;
+    const outputCost = ((s.token_usage?.output_tokens ?? 0) / 1000) * pricing.outputPer1k;
+    const cacheReadCost = ((s.token_usage?.cache_read_tokens ?? 0) / 1000) * pricing.cacheReadPer1k;
+    const cacheCreationCost = ((s.token_usage?.cache_creation_tokens ?? 0) / 1000) * pricing.cacheCreatePer1k;
 
     return {
       session_id: s.session_id ?? s.checkpoint_id ?? 'unknown',
@@ -76,11 +79,12 @@ export function calculateCosts(sessions: CheckpointMetadata[]): CostResult {
 
   return {
     filters: { limit: 0, branch: '', since: '', until: '' },
+    model: pricing.displayName,
     pricing: {
-      input_per_1k: PRICING.inputPer1k,
-      output_per_1k: PRICING.outputPer1k,
-      cache_read_per_1k: PRICING.cacheReadPer1k,
-      cache_create_per_1k: PRICING.cacheCreatePer1k,
+      input_per_1k: pricing.inputPer1k,
+      output_per_1k: pricing.outputPer1k,
+      cache_read_per_1k: pricing.cacheReadPer1k,
+      cache_create_per_1k: pricing.cacheCreatePer1k,
     },
     sessions_analyzed: sessions.length,
     total_cost: totalCost,
@@ -100,6 +104,7 @@ function renderText(result: CostResult): void {
 
   log.plain('💰 비용 분석');
   log.plain('================================');
+  log.plain(`모델: ${result.model}`);
   log.plain(
     `Filters: limit=${result.filters.limit} branch='${result.filters.branch || '*'}' since='${result.filters.since || '*'}' until='${result.filters.until || '*'}'`
   );
@@ -111,10 +116,15 @@ function renderText(result: CostResult): void {
   log.plain('');
 
   log.plain('💳 비용 구성:');
-  log.plain(`  Input:          ${fmtCost(result.cost_breakdown.input)} (${((result.cost_breakdown.input / Math.max(result.total_cost, 0.0001)) * 100).toFixed(1)}%)`);
-  log.plain(`  Output:         ${fmtCost(result.cost_breakdown.output)} (${((result.cost_breakdown.output / Math.max(result.total_cost, 0.0001)) * 100).toFixed(1)}%)`);
-  log.plain(`  Cache Read:     ${fmtCost(result.cost_breakdown.cache_read)} (${((result.cost_breakdown.cache_read / Math.max(result.total_cost, 0.0001)) * 100).toFixed(1)}%)`);
-  log.plain(`  Cache Creation: ${fmtCost(result.cost_breakdown.cache_creation)} (${((result.cost_breakdown.cache_creation / Math.max(result.total_cost, 0.0001)) * 100).toFixed(1)}%)`);
+  const pct = (n: number) => ((n / Math.max(result.total_cost, 0.0001)) * 100).toFixed(1);
+  log.plain(`  Input:          ${fmtCost(result.cost_breakdown.input)} (${pct(result.cost_breakdown.input)}%)`);
+  log.plain(`  Output:         ${fmtCost(result.cost_breakdown.output)} (${pct(result.cost_breakdown.output)}%)`);
+  log.plain(`  Cache Read:     ${fmtCost(result.cost_breakdown.cache_read)} (${pct(result.cost_breakdown.cache_read)}%)`);
+  log.plain(`  Cache Creation: ${fmtCost(result.cost_breakdown.cache_creation)} (${pct(result.cost_breakdown.cache_creation)}%)`);
+  log.plain('');
+
+  log.plain('💲 단가 (per 1K tokens):');
+  log.plain(`  Input: $${result.pricing.input_per_1k}  Output: $${result.pricing.output_per_1k}  Cache Read: $${result.pricing.cache_read_per_1k}  Cache Create: $${result.pricing.cache_create_per_1k}`);
   log.plain('');
 
   log.plain('🔥 비용 TOP 10 세션:');
@@ -124,6 +134,9 @@ function renderText(result: CostResult): void {
 }
 
 export async function runCost(git: GitClient, opts: CostOptions): Promise<void> {
+  const modelKey = opts.model ?? DEFAULT_MODEL;
+  const pricing = getModelPricing(modelKey);
+
   const branchExists = await git.branchExists(CHECKPOINT_BRANCH);
   if (!branchExists) {
     throw new Error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
@@ -160,14 +173,14 @@ export async function runCost(git: GitClient, opts: CostOptions): Promise<void> 
 
   if (sessions.length === 0) {
     if (opts.json) {
-      printJson(calculateCosts([]));
+      printJson(calculateCosts([], pricing));
     } else {
       log.warn('조건에 맞는 checkpoint가 없습니다.');
     }
     return;
   }
 
-  const result = calculateCosts(sessions);
+  const result = calculateCosts(sessions, pricing);
   result.filters = {
     limit: opts.limit ?? 0,
     branch: opts.branch ?? '',

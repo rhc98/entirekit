@@ -164,6 +164,7 @@ program
 program
   .command('cost')
   .description('Analyze estimated API costs')
+  .option('--model <name>', 'Pricing model (opus-4.6, sonnet-4.5, haiku-4.5, etc.)', 'sonnet-4.5')
   .option('--limit <n>', 'Analyze up to N sessions')
   .option('--branch <name>', 'Filter by branch name')
   .option('--since <date>', 'Include sessions on/after DATE (YYYY-MM-DD)')
@@ -172,6 +173,7 @@ program
   .action(async (opts) => {
     const git = new GitClient();
     await runCost(git, {
+      model: opts.model,
       limit: opts.limit ? parsePositiveIntegerOption(opts.limit, '--limit') : undefined,
       branch: opts.branch,
       since: opts.since,
