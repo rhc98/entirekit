@@ -57,11 +57,55 @@ describe('diff command logic', () => {
 
       const result = buildDiffResult(meta1, meta2, 'abc1234', 'def5678');
 
+      // Verify checkpoint fields carry correct values
+      expect(result.checkpoint1.hash).toBe('abc1234');
+      expect(result.checkpoint2.hash).toBe('def5678');
+      expect(result.checkpoint1.created_at).toBe('2026-02-20T10:00:00Z');
+      expect(result.checkpoint2.created_at).toBe('2026-02-20T11:00:00Z');
+      expect(result.checkpoint1.branch).toBe('main');
+      expect(result.checkpoint2.branch).toBe('main');
+
       expect(result.delta.input_tokens).toBe(500);
       expect(result.delta.output_tokens).toBe(200);
       expect(result.delta.cache_read_tokens).toBe(50);
       expect(result.delta.api_call_count).toBe(2);
       expect(result.delta.agent_percentage).toBe(5);
+    });
+
+    it('should handle negative deltas (reverse order comparison)', () => {
+      const meta1: CheckpointMetadata = {
+        token_usage: {
+          input_tokens: 2000,
+          output_tokens: 1000,
+          cache_read_tokens: 300,
+          api_call_count: 10,
+        },
+        initial_attribution: {
+          agent_percentage: 90,
+        },
+        files_touched: ['a.ts', 'b.ts', 'c.ts'],
+      };
+
+      const meta2: CheckpointMetadata = {
+        token_usage: {
+          input_tokens: 500,
+          output_tokens: 200,
+          cache_read_tokens: 50,
+          api_call_count: 3,
+        },
+        initial_attribution: {
+          agent_percentage: 60,
+        },
+        files_touched: ['a.ts'],
+      };
+
+      const result = buildDiffResult(meta1, meta2, 'hash1', 'hash2');
+
+      expect(result.delta.input_tokens).toBe(-1500);
+      expect(result.delta.output_tokens).toBe(-800);
+      expect(result.delta.agent_percentage).toBe(-30);
+      expect(result.delta.files_removed).toEqual(['b.ts', 'c.ts']);
+      expect(result.delta.files_added).toEqual([]);
     });
 
     it('should calculate correct file changes', () => {

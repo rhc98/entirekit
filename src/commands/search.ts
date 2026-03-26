@@ -1,4 +1,4 @@
-import { GitClient, findMetadataPath, findFilePath } from '../git/client.js';
+import { GitClient } from '../git/client.js';
 import { CHECKPOINT_BRANCH } from '../constants.js';
 import { log, printJson } from '../utils/output.js';
 import { matchesBranchFilter, matchesDateFilter } from '../utils/filters.js';
@@ -44,25 +44,56 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
   // Verify checkpoint branch exists
   const branchExists = await git.branchExists(CHECKPOINT_BRANCH);
   if (!branchExists) {
-    log.error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
-    process.exit(1);
+    throw new Error(`Checkpoint branch '${CHECKPOINT_BRANCH}' not found.`);
   }
 
   const promptMatches: PromptMatch[] = [];
   const fileMatches: FileMatch[] = [];
 
-  // Iterate through hashes
-  const hashes = await git.logHashes(CHECKPOINT_BRANCH);
+  // Optimized: use latest commit's tree to list all session dirs at once
+  const allHashes = await git.logHashes(CHECKPOINT_BRANCH);
+  if (allHashes.length === 0) {
+    if (opts.json) {
+      printJson({
+        keyword,
+        filters: { limit: opts.limit ?? 20, branch: opts.branch ?? '', since: opts.since ?? '', until: opts.until ?? '' },
+        prompt_match_count: 0,
+        file_match_count: 0,
+        prompt_matches: [],
+        file_matches: [],
+      });
+    } else {
+      log.warn('No checkpoints found.');
+    }
+    return;
+  }
+
+  const latestHash = allHashes[0]!;
+  const allFiles = await git.listTree(latestHash);
+
+  // Group files by session directory
+  const sessionDirs = new Map<string, string[]>();
+  for (const filePath of allFiles) {
+    const parts = filePath.split('/');
+    if (parts.length >= 2) {
+      const sessionDir = parts.slice(0, -1).join('/');
+      if (!sessionDirs.has(sessionDir)) {
+        sessionDirs.set(sessionDir, []);
+      }
+      sessionDirs.get(sessionDir)!.push(filePath);
+    }
+  }
+
   let selected = 0;
 
-  for (const hash of hashes) {
-    // Get metadata
-    const metadataPath = await findMetadataPath(git, hash);
+  for (const [sessionDir, files] of sessionDirs) {
+    // Find metadata.json
+    const metadataPath = files.find(f => /\/metadata\.json$/.test(f));
     if (!metadataPath) continue;
 
     let metadata: CheckpointMetadata;
     try {
-      const metaJson = await git.showFile(hash, metadataPath);
+      const metaJson = await git.showFile(latestHash, metadataPath);
       metadata = JSON.parse(metaJson);
     } catch {
       continue;
@@ -72,23 +103,19 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
     const branch = metadata.branch ?? 'unknown';
 
     // Apply filters
-    if (!matchesBranchFilter(branch, opts.branch)) {
-      continue;
-    }
-    if (!matchesDateFilter(createdAt, opts.since, opts.until)) {
-      continue;
-    }
+    if (!matchesBranchFilter(branch, opts.branch)) continue;
+    if (!matchesDateFilter(createdAt, opts.since, opts.until)) continue;
 
     // Check prompt and context
-    const promptPath = await findFilePath(git, hash, '/prompt.txt');
-    const contextPath = await findFilePath(git, hash, '/context.md');
+    const promptPath = files.find(f => f.endsWith('/prompt.txt'));
+    const contextPath = files.find(f => f.endsWith('/context.md'));
 
     let promptContent = '';
     let contextContent = '';
 
     if (promptPath) {
       try {
-        promptContent = await git.showFile(hash, promptPath);
+        promptContent = await git.showFile(latestHash, promptPath);
       } catch {
         // Ignore
       }
@@ -96,7 +123,7 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
 
     if (contextPath) {
       try {
-        contextContent = await git.showFile(hash, contextPath);
+        contextContent = await git.showFile(latestHash, contextPath);
       } catch {
         // Ignore
       }
@@ -108,7 +135,6 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
       if (promptContent) {
         snippet = promptContent.split('\n').slice(0, 5).join('\n');
       } else if (contextContent) {
-        // Extract snippet around keyword
         const lines = contextContent.split('\n');
         const matchingLineIndex = lines.findIndex(line =>
           line.toLowerCase().includes(keywordLower)
@@ -122,8 +148,10 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
         }
       }
 
+      // Use session directory name as a short hash identifier
+      const hashId = sessionDir.split('/').pop() ?? sessionDir;
       promptMatches.push({
-        hash,
+        hash: hashId,
         date: createdAt,
         branch,
         snippet,
@@ -137,8 +165,9 @@ export async function runSearch(git: GitClient, opts: SearchOptions): Promise<vo
     );
 
     if (matchingFiles.length > 0) {
+      const hashId = sessionDir.split('/').pop() ?? sessionDir;
       fileMatches.push({
-        hash,
+        hash: hashId,
         date: createdAt,
         branch,
         files: matchingFiles,

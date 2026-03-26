@@ -226,7 +226,7 @@ describe('aggregateFileStats', () => {
 
     const result = aggregateFileStats(sessions);
 
-    expect(result.by_directory.length).toBeGreaterThan(0);
+    expect(result.by_directory).toHaveLength(3); // src, tests, docs
     const srcDir = result.by_directory.find(d => d.directory === 'src');
     expect(srcDir).toBeDefined();
     expect(srcDir?.file_count).toBe(2); // a.ts and b.ts
@@ -417,10 +417,15 @@ describe('buildReportJson', () => {
     expect(result.cost_rates.cache_read_per_1k).toBe(PRICING.cacheReadPer1k);
     expect(result.cost_rates.cache_create_per_1k).toBe(PRICING.cacheCreatePer1k);
     expect(result.generated_at).toBeDefined();
-    expect(result.tokens).toBeDefined();
-    expect(result.attribution).toBeDefined();
-    expect(result.files).toBeDefined();
-    expect(result.timeline).toBeDefined();
-    expect(result.branches).toBeDefined();
+    expect(result.tokens.total_input).toBe(1000);
+    expect(result.tokens.total_output).toBe(500);
+    expect(result.tokens.total_cache_read).toBe(200);
+    expect(result.tokens.total_cache_creation).toBe(100);
+    expect(result.tokens.total_api_calls).toBe(5);
+    expect(result.attribution.total_agent_lines).toBe(100);
+    expect(result.attribution.avg_agent_pct).toBe(75.0);
+    expect(result.files.total_unique_files).toBe(1);
+    expect(result.timeline.sessions).toHaveLength(1);
+    expect(result.branches).toHaveLength(1);
   });
 });
